@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Invoice Generator</title>
+  <style>
+    /* ═══════════════ RESET ═══════════════ */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ═══════════════ THEME CSS VARS ═══════════════ */
+    :root, [data-theme="classic"] {
+      --th-primary:#1a3c5e;--th-accent:#2d6ca2;--th-light-bg:#f4f8fb;
+      --th-border:#d0d7e3;--th-divider:#e0e7ef;--th-text-dark:#1a1a2e;
+      --th-text-grey:#6b7a90;--th-page-bg:#edf2f7;--th-white:#fff;
+      --th-sidebar:#f9fbfd;--th-header-bg:#1a3c5e;--th-row-alt:#f4f8fb;
+      --th-amount-bg:#e8f0fb;
+    }
+    [data-theme="charcoal"] {
+      --th-primary:#2d2d2d;--th-accent:#555;--th-light-bg:#f7f7f7;
+      --th-border:#d4d4d4;--th-divider:#e5e5e5;--th-text-dark:#1a1a1a;
+      --th-text-grey:#777;--th-page-bg:#f0f0f0;--th-white:#fff;
+      --th-sidebar:#fafafa;--th-header-bg:#2d2d2d;--th-row-alt:#f5f5f5;
+      --th-amount-bg:#ededed;
+    }
+    [data-theme="teal"] {
+      --th-primary:#0d7377;--th-accent:#14a3a8;--th-light-bg:#e8f8f5;
+      --th-border:#b2dfdb;--th-divider:#cce8e5;--th-text-dark:#1a2e2e;
+      --th-text-grey:#5f8a87;--th-page-bg:#e0f2f1;--th-white:#fff;
+      --th-sidebar:#f0faf9;--th-header-bg:#0d7377;--th-row-alt:#e8f8f5;
+      --th-amount-bg:#d4efed;
+    }
+    [data-theme="burgundy"] {
+      --th-primary:#6b1d3a;--th-accent:#a03060;--th-light-bg:#fdf2f6;
+      --th-border:#e8c4d0;--th-divider:#f0d6df;--th-text-dark:#2e1a1a;
+      --th-text-grey:#8a5f6f;--th-page-bg:#f8e8ee;--th-white:#fff;
+      --th-sidebar:#fef8fa;--th-header-bg:#6b1d3a;--th-row-alt:#fdf2f6;
+      --th-amount-bg:#f5dde5;
+    }
+    [data-theme="forest"] {
+      --th-primary:#2e5830;--th-accent:#3e7e42;--th-light-bg:#f0f7f0;
+      --th-border:#b8d4ba;--th-divider:#d0e6d1;--th-text-dark:#1a2e1b;
+      --th-text-grey:#5f8a60;--th-page-bg:#e6f0e6;--th-white:#fff;
+      --th-sidebar:#f5faf5;--th-header-bg:#2e5830;--th-row-alt:#f0f7f0;
+      --th-amount-bg:#ddeede;
+    }
+    [data-theme="navy-gold"] {
+      --th-primary:#1b2a4a;--th-accent:#c8943e;--th-light-bg:#f8f6f0;
+      --th-border:#d4cfc2;--th-divider:#e6e1d6;--th-text-dark:#1a1a2e;
+      --th-text-grey:#7a7464;--th-page-bg:#f0ede5;--th-white:#fff;
+      --th-sidebar:#fcfaf6;--th-header-bg:#1b2a4a;--th-row-alt:#f8f6f0;
+      --th-amount-bg:#f0ead8;
+    }
+
+    body {
+      font-family:'Segoe UI',Arial,sans-serif;
+      background:var(--th-page-bg);color:var(--th-text-dark);
+      padding:24px 16px 60px;min-height:100vh;
+    }
+
+    /* ═══════════════ APP HEADER ═══════════════ */
+    #app-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px}
+    #app-header h1{font-size:22px;font-weight:700;color:var(--th-primary)}
+    #upload-area{display:flex;align-items:center;gap:10px}
+    label[for="file-input"]{cursor:pointer;background:var(--th-primary);color:#fff;padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;transition:background .2s;white-space:nowrap}
+    label[for="file-input"]:hover{background:var(--th-accent)}
+    #file-input{display:none}
+    #file-name{font-size:12px;color:var(--th-text-grey);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+    /* ═══════════════ CONFIG PANEL ═══════════════ */
+    #config-panel{background:var(--th-white);border:1px solid var(--th-border);border-radius:10px;padding:20px 24px;margin-bottom:20px;box-shadow:0 2px 8px rgba(26,60,94,.07)}
+    .config-section-title{font-size:12px;font-weight:700;color:var(--th-primary);text-transform:uppercase;letter-spacing:.08em;margin-bottom:14px;padding-bottom:6px;border-bottom:2px solid var(--th-light-bg)}
+    .config-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px 18px;margin-bottom:18px}
+    .config-grid.wide{grid-template-columns:repeat(auto-fill,minmax(240px,1fr))}
+    .field-group{display:flex;flex-direction:column;gap:4px}
+    .field-group label{font-size:11px;font-weight:600;color:var(--th-text-grey);text-transform:uppercase;letter-spacing:.05em}
+    .field-group input,.field-group select{font-family:inherit;font-size:13px;color:var(--th-text-dark);background:var(--th-light-bg);border:1px solid var(--th-border);border-radius:5px;padding:7px 10px;outline:none;transition:border-color .2s,box-shadow .2s;width:100%}
+    .field-group input:focus,.field-group select:focus{border-color:var(--th-accent);box-shadow:0 0 0 2px rgba(45,108,162,.15);background:var(--th-white)}
+    .field-group input[readonly]{background:#eef2f7;color:var(--th-text-grey);cursor:default}
+    .computed-summary{background:var(--th-light-bg);border:1px solid var(--th-border);border-radius:6px;padding:10px 14px;font-size:13px;color:var(--th-primary);font-weight:600;margin-bottom:4px}
+    .config-btn-row{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap;align-items:center}
+    #save-info-btn{background:var(--th-accent);color:#fff;border:none;border-radius:5px;padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;transition:background .2s}
+    #save-info-btn:hover{background:var(--th-primary)}
+
+    /* ═══════════════ THEME PICKER ═══════════════ */
+    .theme-picker{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+    .theme-picker-label{font-size:11px;font-weight:600;color:var(--th-text-grey);text-transform:uppercase;letter-spacing:.05em}
+    .theme-swatch{width:28px;height:28px;border-radius:50%;border:3px solid transparent;cursor:pointer;transition:border-color .2s,transform .15s}
+    .theme-swatch:hover{transform:scale(1.15)}
+    .theme-swatch.active{border-color:var(--th-text-dark);transform:scale(1.15)}
+    .theme-swatch[data-theme="classic"]{background:#1a3c5e}
+    .theme-swatch[data-theme="charcoal"]{background:#2d2d2d}
+    .theme-swatch[data-theme="teal"]{background:#0d7377}
+    .theme-swatch[data-theme="burgundy"]{background:#6b1d3a}
+    .theme-swatch[data-theme="forest"]{background:#2e5830}
+    .theme-swatch[data-theme="navy-gold"]{background:linear-gradient(135deg,#1b2a4a 50%,#c8943e 50%)}
+
+    /* ═══════════════ ACTION BUTTONS ═══════════════ */
+    #action-bar{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;align-items:center}
+    .action-btn{padding:9px 22px;border:none;border-radius:6px;font-size:13px;font-weight:700;cursor:pointer;transition:background .2s,transform .1s;display:flex;align-items:center;gap:6px}
+    .action-btn:active{transform:scale(.97)}
+    .action-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+    #export-pdf-btn{background:var(--th-primary);color:#fff}
+    #export-pdf-btn:hover:not(:disabled){background:var(--th-accent)}
+    #export-print-btn{background:#555;color:#fff}
+    #export-print-btn:hover:not(:disabled){background:#333}
+    #copy-inv-btn{background:var(--th-white);color:var(--th-primary);border:1px solid var(--th-primary)}
+    #copy-inv-btn:hover{background:var(--th-light-bg)}
+    #google-sheets-btn{background:#0f9d58;color:#fff}
+    #google-sheets-btn:hover{background:#0b7a45}
+    #export-spinner{display:none;width:16px;height:16px;border:2px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+
+    /* ═══════════════ INVOICE PREVIEW (screen) ═══════════════ */
+    #invoice-wrapper{display:flex;justify-content:center}
+    #invoice-preview{
+      width:794px;height:1123px;
+      background:var(--th-white);
+      box-shadow:0 4px 32px rgba(26,60,94,.13);
+      border-radius:6px;overflow:hidden;
+      font-family:'Segoe UI',Arial,sans-serif;
+      color:var(--th-text-dark);position:relative;
+      display:flex;flex-direction:column;
+    }
+
+    /* ═══════════════ INVOICE INTERNALS ═══════════════ */
+    .inv-header{display:flex;justify-content:space-between;align-items:flex-start;padding:24px 28px 16px;border-bottom:3px solid var(--th-primary);flex-shrink:0}
+    .inv-header-left{flex:1;min-width:0}
+    .inv-name{font-weight:700;color:var(--th-primary);line-height:1.15;margin-bottom:3px;word-wrap:break-word}
+    .inv-contact{font-size:11px;color:var(--th-text-grey);margin-bottom:2px}
+    .inv-address{font-size:11px;color:var(--th-text-grey)}
+    .inv-header-right{text-align:right;flex-shrink:0;padding-left:12px}
+    .inv-title-label{font-size:22px;font-weight:700;color:var(--th-primary);line-height:1.15;margin-bottom:3px}
+    .inv-tenure{font-size:11px;color:var(--th-text-grey)}
+
+    .inv-body{display:flex;align-items:stretch;flex:1;min-height:0;overflow:hidden}
+
+    .inv-table-wrap{flex:0 0 64%;max-width:64%;padding:14px 10px 14px 24px;overflow:hidden;display:flex;flex-direction:column}
+    .inv-table{width:100%;border-collapse:collapse;flex-shrink:0}
+    .inv-table thead tr{background:var(--th-header-bg);color:#fff}
+    .inv-table thead th{font-weight:700;text-align:left;border:1px solid var(--th-header-bg);color:#fff}
+    .inv-table thead th:first-child{width:13%}
+    .inv-table thead th:nth-child(2){width:71%}
+    .inv-table thead th:last-child{width:16%;text-align:right}
+    .inv-table tbody tr:nth-child(even){background:var(--th-row-alt)}
+    .inv-table tbody tr:nth-child(odd){background:var(--th-white)}
+    .inv-table tbody td{border:1px solid var(--th-border);vertical-align:top}
+    .inv-table tbody td:last-child{text-align:right}
+    .inv-row-total td{font-weight:700!important;background:var(--th-row-alt)!important;border-top:2px solid var(--th-border)!important}
+    .inv-row-amount td{font-weight:700!important;background:var(--th-amount-bg)!important;color:var(--th-primary)!important}
+
+    .inv-sidebar{flex:0 0 36%;max-width:36%;background:var(--th-sidebar);border-left:3px solid var(--th-primary);padding:16px 14px;display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden}
+    .sidebar-section{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--th-divider)}
+    .sidebar-section:last-child{border-bottom:none;margin-bottom:0;padding-bottom:0}
+    .sidebar-label{font-size:10px;color:var(--th-text-grey);margin-bottom:1px}
+    .sidebar-value{font-size:12px;color:var(--th-text-dark);font-weight:500;word-break:break-word}
+    .inv-amount-due-label{font-size:12px;font-weight:700;color:var(--th-primary);margin-bottom:2px}
+    .inv-amount-due-value{font-size:24px;font-weight:700;color:var(--th-primary);line-height:1.1}
+    .payment-row{display:flex;justify-content:space-between;gap:6px;margin-bottom:3px}
+    .payment-row .p-label{font-size:10px;color:var(--th-text-grey);flex-shrink:0}
+    .payment-row .p-value{font-size:10px;color:var(--th-text-dark);font-weight:600;text-align:right;word-break:break-all}
+    .payment-heading{font-size:10px;font-weight:700;color:var(--th-primary);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em}
+
+    /* ═══════════════ PRINT (fallback) ═══════════════ */
+    @media print{
+      html,body{margin:0!important;padding:0!important;background:#fff!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      #app-header,#config-panel,#action-bar,#toast,#gs-modal-overlay{display:none!important}
+      #invoice-wrapper{display:flex!important;justify-content:center!important;padding:0!important;margin:0!important}
+      #invoice-preview{width:794px!important;height:auto!important;min-height:0!important;margin:0!important;box-shadow:none!important;border-radius:0!important;page-break-inside:avoid!important;overflow:visible!important}
+      .inv-body{overflow:visible!important}
+      .inv-table-wrap{overflow:visible!important}
+      .inv-table thead tr,.inv-table thead th{background:var(--th-header-bg)!important;color:#fff!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .inv-table tbody tr:nth-child(even){background:var(--th-row-alt)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .inv-row-total td{background:var(--th-row-alt)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .inv-row-amount td{background:var(--th-amount-bg)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .inv-sidebar{background:var(--th-sidebar)!important;border-left:3px solid var(--th-primary)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .inv-header{border-bottom:3px solid var(--th-primary)!important}
+      .inv-name,.inv-title-label,.inv-amount-due-label,.inv-amount-due-value,.payment-heading,.inv-row-amount td{color:var(--th-primary)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      @page{size:A4;margin:8mm}
+    }
+
+    /* ═══════════════ TOAST ═══════════════ */
+    #toast{position:fixed;bottom:28px;right:28px;background:var(--th-primary);color:#fff;font-size:13px;font-weight:600;padding:10px 20px;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,.2);opacity:0;transform:translateY(10px);transition:opacity .25s,transform .25s;pointer-events:none;z-index:9999}
+    #toast.show{opacity:1;transform:translateY(0)}
+
+    /* ═══════════════ GOOGLE SHEETS MODAL ═══════════════ */
+    #gs-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1000;justify-content:center;align-items:center}
+    #gs-modal-overlay.open{display:flex}
+    #gs-modal{background:var(--th-white);border-radius:10px;padding:28px 32px;width:500px;max-width:95vw;box-shadow:0 8px 40px rgba(0,0,0,.18)}
+    #gs-modal h2{font-size:17px;color:var(--th-primary);margin-bottom:6px}
+    #gs-modal p{font-size:12px;color:var(--th-text-grey);margin-bottom:16px;line-height:1.5}
+    #gs-modal .field-group{margin-bottom:12px}
+    #gs-modal-btns{display:flex;gap:10px;margin-top:18px}
+    #gs-fetch-btn{background:#0f9d58;color:#fff;border:none;border-radius:5px;padding:8px 20px;font-size:13px;font-weight:600;cursor:pointer}
+    #gs-fetch-btn:hover{background:#0b7a45}
+    #gs-close-btn{background:var(--th-white);color:var(--th-text-grey);border:1px solid var(--th-border);border-radius:5px;padding:8px 16px;font-size:13px;cursor:pointer}
+    #gs-status{font-size:12px;margin-top:10px;color:var(--th-accent);min-height:18px}
+
+    /* ═══════════════ RESPONSIVE ═══════════════ */
+    @media(max-width:860px){
+      #invoice-preview{width:100%!important;height:auto!important}
+      .inv-body{flex-direction:column}
+      .inv-table-wrap,.inv-sidebar{flex:0 0 100%!important;max-width:100%!important;border-right:none;border-left:none;border-top:1px solid var(--th-border);padding:16px}
+    }
+  </style>
+</head>
+<body data-theme="classic">
+
+  <!-- ═══════ APP HEADER ═══════ -->
+  <div id="app-header">
+    <h1>&#x1f9fe; Invoice Generator</h1>
+    <div id="upload-area">
+      <span id="file-name">No file selected</span>
+      <label for="file-input">&#x1f4c2; Upload .xlsx</label>
+      <input type="file" id="file-input" accept=".xlsx,.xls" />
+    </div>
+  </div>
+
+  <!-- ═══════ CONFIG PANEL ═══════ -->
+  <div id="config-panel">
+    <div class="config-section-title">Invoice Details</div>
+    <div class="config-grid">
+      <div class="field-group"><label for="cfg-month">Month / Sheet</label><select id="cfg-month"><option value="">— upload a file first —</option></select></div>
+      <div class="field-group"><label for="cfg-inv-num">Invoice Number</label><input type="text" id="cfg-inv-num" placeholder="e.g. 202511" /></div>
+      <div class="field-group"><label for="cfg-inv-date">Invoice Date</label><input type="date" id="cfg-inv-date" /></div>
+      <div class="field-group"><label for="cfg-tenure">Tenure Period</label><input type="text" id="cfg-tenure" placeholder="e.g. 1st Nov, 2025 – 30th Nov, 2025" /></div>
+      <div class="field-group"><label for="cfg-billed-to">Billed To</label><input type="text" id="cfg-billed-to" placeholder="e.g. Acme Corp Pvt Ltd." /></div>
+      <div class="field-group"><label for="cfg-rate">Rate Per Hour (USD)</label><input type="number" id="cfg-rate" value="20" min="0" step="0.01" /></div>
+      <div class="field-group"><label for="cfg-fx">USD &rarr; INR Rate</label><input type="number" id="cfg-fx" value="86" min="1" step="0.01" /></div>
+      <div class="field-group"><label for="cfg-hours">Total Hours (computed)</label><input type="text" id="cfg-hours" readonly /></div>
+      <div class="field-group"><label for="cfg-usd">Total Amount (USD)</label><input type="text" id="cfg-usd" readonly /></div>
+      <div class="field-group"><label for="cfg-inr">Total Amount (INR) — Amount Due</label><input type="text" id="cfg-inr" readonly /></div>
+    </div>
+    <div class="computed-summary" id="computed-summary">No file loaded — upload an .xlsx timesheet to begin.</div>
+
+    <div class="config-section-title" style="margin-top:18px;">Your Info (saved to browser)</div>
+    <div class="config-grid wide">
+      <div class="field-group"><label for="cfg-name">Your Name</label><input type="text" id="cfg-name" placeholder="e.g. Jane Doe" /></div>
+      <div class="field-group"><label for="cfg-addr1">Address Line 1</label><input type="text" id="cfg-addr1" placeholder="e.g. 123 Main Street" /></div>
+      <div class="field-group"><label for="cfg-addr2">Address Line 2</label><input type="text" id="cfg-addr2" placeholder="e.g. Mumbai, Maharashtra 400001" /></div>
+      <div class="field-group"><label for="cfg-country">Country</label><input type="text" id="cfg-country" placeholder="e.g. India" /></div>
+      <div class="field-group"><label for="cfg-email">Email</label><input type="email" id="cfg-email" placeholder="e.g. you@example.com" /></div>
+      <div class="field-group"><label for="cfg-phone">Phone</label><input type="tel" id="cfg-phone" placeholder="e.g. 9876543210" /></div>
+    </div>
+    <div class="config-grid wide">
+      <div class="field-group"><label for="cfg-bank">Bank Name</label><input type="text" id="cfg-bank" placeholder="e.g. State Bank of India" /></div>
+      <div class="field-group"><label for="cfg-branch">Branch</label><input type="text" id="cfg-branch" placeholder="e.g. ANDHERI WEST" /></div>
+      <div class="field-group"><label for="cfg-account">Account Number</label><input type="text" id="cfg-account" placeholder="e.g. 1234567890" /></div>
+      <div class="field-group"><label for="cfg-ifsc">IFSC Code</label><input type="text" id="cfg-ifsc" placeholder="e.g. SBIN0001234" /></div>
+      <div class="field-group"><label for="cfg-micr">MICR Code</label><input type="text" id="cfg-micr" placeholder="e.g. 400002" /></div>
+    </div>
+    <div class="config-btn-row">
+      <button id="save-info-btn">&#x1f4be; Save Info</button>
+      <div class="theme-picker">
+        <span class="theme-picker-label">Theme:</span>
+        <span class="theme-swatch active" data-theme="classic" title="Classic Blue"></span>
+        <span class="theme-swatch" data-theme="charcoal" title="Charcoal"></span>
+        <span class="theme-swatch" data-theme="teal" title="Teal"></span>
+        <span class="theme-swatch" data-theme="burgundy" title="Burgundy"></span>
+        <span class="theme-swatch" data-theme="forest" title="Forest"></span>
+        <span class="theme-swatch" data-theme="navy-gold" title="Navy &amp; Gold"></span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ ACTION BUTTONS ═══════ -->
+  <div id="action-bar">
+    <button class="action-btn" id="export-pdf-btn">&#x1f4c4; Export to PDF <span id="export-spinner"></span></button>
+    <button class="action-btn" id="export-print-btn">&#x1f5a8;&#xfe0f; Print (browser)</button>
+    <button class="action-btn" id="copy-inv-btn">&#x1f4cb; Copy Invoice Number</button>
+    <button class="action-btn" id="google-sheets-btn">&#x1f4ca; Load from Google Sheets</button>
+  </div>
+
+  <!-- ═══════ INVOICE PREVIEW ═══════ -->
+  <div id="invoice-wrapper">
+    <div id="invoice-preview"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="toast"></div>
+
+  <!-- ═══════ GOOGLE SHEETS MODAL ═══════ -->
+  <div id="gs-modal-overlay">
+    <div id="gs-modal">
+      <h2>&#x1f4ca; Load from Google Sheets</h2>
+      <p>Paste the <strong>Spreadsheet ID</strong> or the full URL:<br>
+        <code>https://docs.google.com/spreadsheets/d/<strong>[ID]</strong>/edit</code><br><br>
+        The spreadsheet must be <strong>"Anyone with the link can view"</strong>.</p>
+      <div class="field-group">
+        <label for="gs-sheet-id">Spreadsheet ID or URL</label>
+        <input type="text" id="gs-sheet-id" placeholder="e.g. your-google-spreadsheet-id" />
+      </div>
+      <div id="gs-status"></div>
+      <div id="gs-modal-btns">
+        <button id="gs-fetch-btn">Fetch &amp; Load</button>
+        <button id="gs-close-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ CDN LIBRARIES ═══════ -->
+  <script src="https://cdn.sheetjs.com/xlsx-latest/package/dist/xlsx.full.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+  <!-- ═══════ APPLICATION SCRIPT ═══════ -->
+  <script>
+  'use strict';
+
+  // ═══════════════ STATE ═══════════════
+  var state = { workbook: null, sheetData: [], sheets: [] };
+
+  // ═══════════════ CONSTANTS ═══════════════
+  var LS_KEY_PERSONAL = 'invoiceGen_personalInfo';
+  var LS_KEY_THEME    = 'invoiceGen_theme';
+  var PERSONAL_FIELDS = [
+    'cfg-name','cfg-addr1','cfg-addr2','cfg-country',
+    'cfg-email','cfg-phone',
+    'cfg-bank','cfg-branch','cfg-account','cfg-ifsc','cfg-micr'
+  ];
+  var ALL_CONFIG_INPUTS = [
+    'cfg-inv-num','cfg-inv-date','cfg-tenure','cfg-billed-to','cfg-rate','cfg-fx',
+    'cfg-name','cfg-addr1','cfg-addr2','cfg-country','cfg-email','cfg-phone',
+    'cfg-bank','cfg-branch','cfg-account','cfg-ifsc','cfg-micr'
+  ];
+  var MONTH_ABBR = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var THEMES = ['classic','charcoal','teal','burgundy','forest','navy-gold'];
+
+  // ═══════════════ DOM HELPERS ═══════════════
+  function $(id) { return document.getElementById(id); }
+  function $$(sel) { return document.querySelectorAll(sel); }
+  function mk(tag, attrs, children) {
+    var e = document.createElement(tag);
+    if (attrs) for (var k in attrs) {
+      if (!attrs.hasOwnProperty(k)) continue;
+      var v = attrs[k];
+      if (k === 'className') e.className = v;
+      else if (k === 'textContent') e.textContent = v;
+      else if (k === 'innerHTML') e.innerHTML = v;
+      else e.setAttribute(k, v);
+    }
+    if (children) {
+      var arr = Array.isArray(children) ? children : [children];
+      for (var i = 0; i < arr.length; i++) {
+        if (!arr[i]) continue;
+        e.appendChild(typeof arr[i] === 'string' ? document.createTextNode(arr[i]) : arr[i]);
+      }
+    }
+    return e;
+  }
+
+  // ═══════════════ UTILITY ═══════════════
+  function formatINR(amount) {
+    if (amount == null || isNaN(amount)) return '\u20B90.00';
+    var num = Math.abs(Number(amount));
+    var parts = num.toFixed(2).split('.');
+    var intPart = parts[0], decPart = parts[1];
+    var last3 = intPart.slice(-3);
+    var rest = intPart.slice(0, -3);
+    var fmt = rest ? rest.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + ',' + last3 : last3;
+    return (amount < 0 ? '-' : '') + '\u20B9' + fmt + '.' + decPart;
+  }
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+  }
+
+  function formatDateCell(val) {
+    if (val == null || val === '') return '';
+    if (typeof val === 'string') return val.trim();
+    if (val instanceof Date && !isNaN(val.getTime())) return val.getDate()+' '+MONTH_ABBR[val.getMonth()];
+    if (typeof val === 'number') { try { var d=new Date(Math.round((val-25569)*864e5)); if(!isNaN(d.getTime())) return d.getUTCDate()+' '+MONTH_ABBR[d.getUTCMonth()]; } catch(_){} }
+    return String(val);
+  }
+
+  function formatDisplayDate(s) {
+    if (!s) return '\u2014';
+    var p = s.split('-').map(Number);
+    if (p.length !== 3 || p.some(isNaN)) return s;
+    var d = p[2], suf = ['th','st','nd','rd'];
+    var sf = (d%100>=11&&d%100<=13)?'th':(suf[d%10]||'th');
+    return d+sf+' '+MONTH_ABBR[p[1]-1]+', '+p[0];
+  }
+
+  var _toastTimer = null;
+  function showToast(msg) {
+    var t = $('toast'); t.textContent = msg; t.classList.add('show');
+    if (_toastTimer) clearTimeout(_toastTimer);
+    _toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 2800);
+  }
+
+  function cfgVal(id) { var e = $(id); return e ? e.value.trim() : ''; }
+  function cfgNum(id, fb) { var v = parseFloat(cfgVal(id)); return (isNaN(v)||v<0) ? fb : v; }
+
+  // ═══════════════ XLSX PARSING ═══════════════
+  function parseSheet(wb, name) {
+    var ws = wb.Sheets[name];
+    if (!ws) return { tenure:'', rows:[], totalHours:0, rate:20 };
+    var range = XLSX.utils.decode_range(ws['!ref']||'A1:C1');
+    function cv(r,c) { var cell = ws[XLSX.utils.encode_cell({r:r,c:c})]; return cell ? (cell.v !== undefined ? cell.v : null) : null; }
+    var tenure = String(cv(0,1)||''), rows = [], rate = 20;
+    for (var r = 2; r <= range.e.r; r++) {
+      var c0=cv(r,0),c1=cv(r,1),c2=cv(r,2);
+      if (c0==null) { var lb=String(c1||'').trim().toLowerCase(); if(lb==='rate per hour'&&c2!=null){var p=parseFloat(c2);if(!isNaN(p)&&p>0)rate=p;} continue; }
+      if (c2==='--'||c2==null) continue;
+      var hrs = parseFloat(c2); if (isNaN(hrs)) continue;
+      rows.push({ date:c0, desc:(c1!=null)?String(c1):'', hours:hrs });
+    }
+    return { tenure:tenure, rows:rows, totalHours:rows.reduce(function(s,r){return s+r.hours;},0), rate:rate };
+  }
+
+  function suggestInvNum(name) {
+    var ms={january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
+    var low=name.toLowerCase(),ym=name.match(/(\d{4})/),yr=ym?ym[1]:String(new Date().getFullYear());
+    for(var m in ms){if(low.indexOf(m)!==-1)return yr+ms[m];} return '';
+  }
+
+  // ═══════════════ FILE LOAD ═══════════════
+  function loadWorkbook(buf) {
+    try {
+      if (typeof XLSX === 'undefined') { showToast('\u274C SheetJS library not loaded. Check your internet connection and reload.'); return; }
+      // Ensure we pass a Uint8Array for maximum CDN compatibility
+      var data;
+      if (buf instanceof ArrayBuffer) { data = new Uint8Array(buf); }
+      else if (buf instanceof Uint8Array) { data = buf; }
+      else if (ArrayBuffer.isView(buf)) { data = new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength); }
+      else { data = buf; }
+      var wb = XLSX.read(data, { type: 'array', cellDates: true });
+      state.workbook = wb;
+      state.sheets = wb.SheetNames || [];
+      if (!state.sheets.length) { showToast('No sheets found in file.'); return; }
+      populateSheetDropdown(state.sheets);
+      showToast('\u2705 File loaded \u2014 ' + state.sheets.length + ' sheet(s).');
+    } catch(e) {
+      console.error('loadWorkbook error:', e);
+      showToast('\u274C Error: ' + (e.message || String(e)));
+    }
+  }
+  function populateSheetDropdown(names) {
+    var sel=$('cfg-month'); sel.innerHTML='';
+    names.forEach(function(n){var o=document.createElement('option');o.value=n;o.textContent=n;sel.appendChild(o);});
+    if(names.length>0){sel.value=names[0];onSheetChange(names[0]);}
+  }
+  function onSheetChange(name) {
+    if(!state.workbook)return;
+    var p=parseSheet(state.workbook,name); state.sheetData=p.rows;
+    $('cfg-tenure').value=p.tenure; $('cfg-rate').value=p.rate;
+    var sug=suggestInvNum(name); if(sug)$('cfg-inv-num').value=sug;
+    renderInvoice();
+  }
+
+  // ═══════════════ COMPUTE ═══════════════
+  function computeTotals() {
+    var hrs=state.sheetData.reduce(function(s,r){return s+r.hours;},0);
+    var rate=cfgNum('cfg-rate',20),fx=cfgNum('cfg-fx',86);
+    return {hours:hrs,rate:rate,fx:fx,usd:hrs*rate,inr:hrs*rate*fx};
+  }
+
+  // ═══════════════ AUTO-FIT SIZING ═══════════════
+  function getAutoFitSizing(n) {
+    if (n<=0) return {fs:9,pad:4,lh:1.35,thFs:10,nameFs:26};
+    var budget = 946/(n+2);
+    var fs,pad,lh;
+    if(budget>=26){fs=9;pad=4;lh=1.35;}
+    else if(budget>=20){fs=8.5;pad=3;lh=1.25;}
+    else if(budget>=16){fs=8;pad=2.5;lh=1.2;}
+    else if(budget>=13){fs=7;pad=2;lh=1.15;}
+    else if(budget>=11){fs=6.5;pad=1.5;lh=1.1;}
+    else{fs=6;pad=1;lh=1.05;}
+    return {fs:fs,pad:pad,lh:lh,thFs:Math.min(fs+1,10),nameFs:n>30?22:26};
+  }
+
+  // ═══════════════ RENDER INVOICE ═══════════════
+  function renderInvoice() {
+    var t = computeTotals();
+    $('cfg-hours').value=t.hours.toFixed(2);
+    $('cfg-usd').value='$'+t.usd.toFixed(2);
+    $('cfg-inr').value=formatINR(t.inr);
+    $('computed-summary').textContent=t.hours.toFixed(2)+' hrs \u00D7 $'+t.rate+' \u00D7 '+t.fx+' = '+formatINR(t.inr);
+
+    var name=cfgVal('cfg-name')||'Your Name',email=cfgVal('cfg-email')||'email@example.com',phone=cfgVal('cfg-phone')||'\u2014';
+    var addr1=cfgVal('cfg-addr1'),addr2=cfgVal('cfg-addr2'),tenure=cfgVal('cfg-tenure')||'\u2014';
+    var invDate=cfgVal('cfg-inv-date'),billedTo=cfgVal('cfg-billed-to')||'\u2014',invNum=cfgVal('cfg-inv-num')||'\u2014';
+    var bank=cfgVal('cfg-bank')||'\u2014',branch=cfgVal('cfg-branch')||'\u2014',account=cfgVal('cfg-account')||'\u2014';
+    var ifsc=cfgVal('cfg-ifsc')||'\u2014',micr=cfgVal('cfg-micr')||'\u2014';
+    var address=[addr1,addr2].filter(Boolean).join(', ')||'\u2014';
+
+    var sz=getAutoFitSizing(state.sheetData.length);
+    var padCSS=sz.pad+'px '+(sz.pad+2)+'px';
+
+    var pv=$('invoice-preview');
+    while(pv.firstChild)pv.removeChild(pv.firstChild);
+
+    // HEADER
+    var nameEl=mk('div',{className:'inv-name',textContent:name}); nameEl.style.fontSize=sz.nameFs+'px';
+    pv.appendChild(mk('div',{className:'inv-header'},[
+      mk('div',{className:'inv-header-left'},[nameEl,mk('div',{className:'inv-contact',textContent:email+' \u2022 '+phone}),mk('div',{className:'inv-address',textContent:address})]),
+      mk('div',{className:'inv-header-right'},[mk('div',{className:'inv-title-label',textContent:'Invoice'}),mk('div',{className:'inv-tenure',textContent:tenure})])
+    ]));
+
+    // BODY
+    var body=mk('div',{className:'inv-body'});
+    var tw=mk('div',{className:'inv-table-wrap'});
+    var tbl=mk('table',{className:'inv-table'}); tbl.style.fontSize=sz.fs+'px';
+
+    // thead
+    var thD=mk('th',{textContent:'Date'}),thT=mk('th',{textContent:'Task Description'}),thH=mk('th',{textContent:'Time Required [Hrs]'});
+    thH.style.textAlign='right';
+    [thD,thT,thH].forEach(function(th){th.style.padding=padCSS;th.style.fontSize=sz.thFs+'px';});
+    tbl.appendChild(mk('thead',null,[mk('tr',null,[thD,thT,thH])]));
+
+    // tbody
+    var tb=mk('tbody');
+    if(!state.sheetData.length){
+      var ed=mk('td',{textContent:'Upload a timesheet to populate'}); ed.setAttribute('colspan','3'); ed.style.cssText='text-align:center;color:#aaa;padding:20px;';
+      tb.appendChild(mk('tr',null,[ed]));
+    } else {
+      state.sheetData.forEach(function(row){
+        var tr=mk('tr');
+        var d1=mk('td',{textContent:formatDateCell(row.date)});
+        var d2=mk('td'); d2.innerHTML=escapeHtml(row.desc).replace(/\n/g,'<br>');
+        var d3=mk('td',{textContent:String(row.hours)}); d3.style.textAlign='right';
+        [d1,d2,d3].forEach(function(td){td.style.padding=padCSS;td.style.lineHeight=String(sz.lh);td.style.fontSize=sz.fs+'px';});
+        tr.appendChild(d1);tr.appendChild(d2);tr.appendChild(d3);tb.appendChild(tr);
+      });
+      // Total Hours
+      var rt=mk('tr',{className:'inv-row-total'});
+      var rtb=mk('td');rtb.style.padding=padCSS;
+      var rtl=mk('td',{textContent:'Total Hours'});rtl.style.padding=padCSS;
+      var rtv=mk('td',{textContent:t.hours.toFixed(2)});rtv.style.padding=padCSS;rtv.style.textAlign='right';
+      rt.appendChild(rtb);rt.appendChild(rtl);rt.appendChild(rtv);tb.appendChild(rt);
+      // Total Amount
+      var ra=mk('tr',{className:'inv-row-amount'});
+      var rab=mk('td');rab.style.padding=padCSS;
+      var ral=mk('td',{textContent:'Total Amount \u20B9'});ral.style.padding=padCSS;
+      var rav=mk('td',{textContent:formatINR(t.inr)});rav.style.padding=padCSS;rav.style.textAlign='right';
+      ra.appendChild(rab);ra.appendChild(ral);ra.appendChild(rav);tb.appendChild(ra);
+    }
+    tbl.appendChild(tb);tw.appendChild(tbl);body.appendChild(tw);
+
+    // SIDEBAR
+    var sb=mk('div',{className:'inv-sidebar'});
+    sb.appendChild(mkSS('Invoice Date',formatDisplayDate(invDate)));
+    var as=mk('div',{className:'sidebar-section'});
+    as.appendChild(mk('div',{className:'inv-amount-due-label',textContent:'Amount Due (INR)'}));
+    as.appendChild(mk('div',{className:'inv-amount-due-value',textContent:formatINR(t.inr)}));
+    sb.appendChild(as);
+    sb.appendChild(mkSS('Billed To',billedTo));
+    sb.appendChild(mkSS('Invoice Number',invNum));
+    var ps=mk('div',{className:'sidebar-section'});
+    ps.appendChild(mk('div',{className:'payment-heading',textContent:'Payment Details'}));
+    ps.appendChild(mkPR('Bank',bank));ps.appendChild(mkPR('Branch',branch));
+    ps.appendChild(mkPR('Account #',account));ps.appendChild(mkPR('IFSC Code',ifsc));
+    ps.appendChild(mkPR('MICR Code',micr));
+    sb.appendChild(ps);
+    body.appendChild(sb);pv.appendChild(body);
+  }
+
+  function mkSS(l,v){return mk('div',{className:'sidebar-section'},[mk('div',{className:'sidebar-label',textContent:l}),mk('div',{className:'sidebar-value',textContent:v})]);}
+  function mkPR(l,v){return mk('div',{className:'payment-row'},[mk('span',{className:'p-label',textContent:l}),mk('span',{className:'p-value',textContent:v})]);}
+
+  // ═══════════════ localStorage ═══════════════
+  function savePersonalInfo() {
+    try{var d={};PERSONAL_FIELDS.forEach(function(id){d[id]=$(id).value;});d['cfg-billed-to']=$('cfg-billed-to').value;localStorage.setItem(LS_KEY_PERSONAL,JSON.stringify(d));showToast('\u2705 Info saved!');renderInvoice();}catch(e){showToast('\u26A0 '+e.message);}
+  }
+  function loadPersonalInfo() {
+    try{var r=localStorage.getItem(LS_KEY_PERSONAL);if(!r)return;var d=JSON.parse(r);PERSONAL_FIELDS.forEach(function(id){if(d[id]!=null)$(id).value=d[id];});if(d['cfg-billed-to']!=null)$('cfg-billed-to').value=d['cfg-billed-to'];}catch(_){}
+  }
+
+  // ═══════════════ THEME ═══════════════
+  function setTheme(n) {
+    if(THEMES.indexOf(n)===-1)n='classic';
+    document.body.setAttribute('data-theme',n);
+    $('invoice-preview').setAttribute('data-theme',n);
+    $$('.theme-swatch').forEach(function(s){s.classList.toggle('active',s.getAttribute('data-theme')===n);});
+    try{localStorage.setItem(LS_KEY_THEME,n);}catch(_){}
+  }
+  function loadTheme(){try{var s=localStorage.getItem(LS_KEY_THEME);return(s&&THEMES.indexOf(s)!==-1)?s:'classic';}catch(_){return'classic';}}
+
+  // ═══════════════════════════════════════════════════════════════
+  // === PDF EXPORT — iframe snapshot + html2canvas + jsPDF ===
+  // ═══════════════════════════════════════════════════════════════
+
+  /**
+   * Resolve the current theme's CSS custom property values so we can
+   * build a fully-inlined HTML string with zero var() references.
+   */
+  function resolveThemeColors() {
+    var cs = window.getComputedStyle(document.documentElement);
+    var pv = $('invoice-preview');
+    var pvCS = pv ? window.getComputedStyle(pv) : cs;
+    function gv(name) {
+      // Try reading from invoice-preview first (it has data-theme), then :root
+      var v = pvCS.getPropertyValue(name).trim();
+      if (!v) v = cs.getPropertyValue(name).trim();
+      return v || '#000';
+    }
+    return {
+      primary:   gv('--th-primary'),
+      accent:    gv('--th-accent'),
+      lightBg:   gv('--th-light-bg'),
+      border:    gv('--th-border'),
+      divider:   gv('--th-divider'),
+      textDark:  gv('--th-text-dark'),
+      textGrey:  gv('--th-text-grey'),
+      pageBg:    gv('--th-page-bg'),
+      white:     gv('--th-white'),
+      sidebar:   gv('--th-sidebar'),
+      headerBg:  gv('--th-header-bg'),
+      rowAlt:    gv('--th-row-alt'),
+      amountBg:  gv('--th-amount-bg')
+    };
+  }
+
+  /**
+   * Build a complete standalone HTML page string for the invoice,
+   * with ALL styles hardcoded inline — no CSS variables, no external CSS.
+   * This will be loaded in a hidden iframe for pixel-perfect capture.
+   */
+  function buildInvoiceHTML() {
+    var t = computeTotals();
+    var c = resolveThemeColors();
+
+    var name    = cfgVal('cfg-name')    || 'Your Name';
+    var email   = cfgVal('cfg-email')   || 'email@example.com';
+    var phone   = cfgVal('cfg-phone')   || '\u2014';
+    var addr1   = cfgVal('cfg-addr1');
+    var addr2   = cfgVal('cfg-addr2');
+    var tenure  = cfgVal('cfg-tenure')  || '\u2014';
+    var invDate = cfgVal('cfg-inv-date');
+    var billedTo= cfgVal('cfg-billed-to')|| '\u2014';
+    var invNum  = cfgVal('cfg-inv-num') || '\u2014';
+    var bank    = cfgVal('cfg-bank')    || '\u2014';
+    var branch  = cfgVal('cfg-branch')  || '\u2014';
+    var account = cfgVal('cfg-account') || '\u2014';
+    var ifsc    = cfgVal('cfg-ifsc')    || '\u2014';
+    var micr    = cfgVal('cfg-micr')    || '\u2014';
+    var address = [addr1,addr2].filter(Boolean).join(', ') || '\u2014';
+    var sz      = getAutoFitSizing(state.sheetData.length);
+    var pad     = sz.pad + 'px ' + (sz.pad+2) + 'px';
+
+    // Build table rows HTML
+    var rowsHTML = '';
+    if (!state.sheetData.length) {
+      rowsHTML = '<tr><td colspan="3" style="text-align:center;color:#aaa;padding:20px;border:1px solid '+esc(c.border)+'">No data</td></tr>';
+    } else {
+      for (var i = 0; i < state.sheetData.length; i++) {
+        var row = state.sheetData[i];
+        var bgColor = (i % 2 === 0) ? c.white : c.rowAlt;
+        rowsHTML += '<tr style="background:'+esc(bgColor)+'">'
+          + '<td style="padding:'+pad+';line-height:'+sz.lh+';font-size:'+sz.fs+'px;border:1px solid '+esc(c.border)+';vertical-align:top">'+esc(formatDateCell(row.date))+'</td>'
+          + '<td style="padding:'+pad+';line-height:'+sz.lh+';font-size:'+sz.fs+'px;border:1px solid '+esc(c.border)+';vertical-align:top">'+escapeHtml(row.desc).replace(/\n/g,'<br>')+'</td>'
+          + '<td style="padding:'+pad+';line-height:'+sz.lh+';font-size:'+sz.fs+'px;border:1px solid '+esc(c.border)+';vertical-align:top;text-align:right">'+esc(String(row.hours))+'</td>'
+          + '</tr>';
+      }
+      // Total Hours row
+      rowsHTML += '<tr style="background:'+esc(c.rowAlt)+'">'
+        + '<td style="padding:'+pad+';font-weight:700;border:1px solid '+esc(c.border)+';border-top:2px solid '+esc(c.border)+'"></td>'
+        + '<td style="padding:'+pad+';font-weight:700;border:1px solid '+esc(c.border)+';border-top:2px solid '+esc(c.border)+'">Total Hours</td>'
+        + '<td style="padding:'+pad+';font-weight:700;border:1px solid '+esc(c.border)+';border-top:2px solid '+esc(c.border)+';text-align:right">'+esc(t.hours.toFixed(2))+'</td>'
+        + '</tr>';
+      // Total Amount row
+      rowsHTML += '<tr style="background:'+esc(c.amountBg)+'">'
+        + '<td style="padding:'+pad+';font-weight:700;color:'+esc(c.primary)+';border:1px solid '+esc(c.border)+'"></td>'
+        + '<td style="padding:'+pad+';font-weight:700;color:'+esc(c.primary)+';border:1px solid '+esc(c.border)+'">Total Amount \u20B9</td>'
+        + '<td style="padding:'+pad+';font-weight:700;color:'+esc(c.primary)+';border:1px solid '+esc(c.border)+';text-align:right">'+esc(formatINR(t.inr))+'</td>'
+        + '</tr>';
+    }
+
+    // Payment row helper
+    function pRow(label, value) {
+      return '<div style="display:flex;justify-content:space-between;gap:6px;margin-bottom:3px">'
+        + '<span style="font-size:10px;color:'+esc(c.textGrey)+';flex-shrink:0">'+esc(label)+'</span>'
+        + '<span style="font-size:10px;color:'+esc(c.textDark)+';font-weight:600;text-align:right;word-break:break-all">'+esc(value)+'</span>'
+        + '</div>';
+    }
+
+    // Sidebar section helper
+    function sSection(label, value, borderBottom) {
+      var bb = borderBottom !== false ? 'border-bottom:1px solid '+esc(c.divider)+';' : '';
+      return '<div style="margin-bottom:10px;padding-bottom:10px;'+bb+'">'
+        + '<div style="font-size:10px;color:'+esc(c.textGrey)+';margin-bottom:1px">'+esc(label)+'</div>'
+        + '<div style="font-size:12px;color:'+esc(c.textDark)+';font-weight:500;word-break:break-word">'+esc(value)+'</div>'
+        + '</div>';
+    }
+
+    var html = '<!DOCTYPE html><html><head><meta charset="UTF-8"><style>'
+      + '*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}'
+      + 'body{margin:0;padding:0;width:794px;height:1123px;font-family:Segoe UI,Arial,sans-serif;background:#fff}'
+      + '</style></head><body>'
+      + '<div style="width:794px;height:1123px;display:flex;flex-direction:column;font-family:Segoe UI,Arial,sans-serif;color:'+esc(c.textDark)+';background:'+esc(c.white)+'">'
+
+      // HEADER
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:24px 28px 16px;border-bottom:3px solid '+esc(c.primary)+';flex-shrink:0">'
+        + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:'+sz.nameFs+'px;font-weight:700;color:'+esc(c.primary)+';line-height:1.15;margin-bottom:3px;word-wrap:break-word">'+esc(name)+'</div>'
+          + '<div style="font-size:11px;color:'+esc(c.textGrey)+';margin-bottom:2px">'+esc(email+' \u2022 '+phone)+'</div>'
+          + '<div style="font-size:11px;color:'+esc(c.textGrey)+'">'+esc(address)+'</div>'
+        + '</div>'
+        + '<div style="text-align:right;flex-shrink:0;padding-left:12px">'
+          + '<div style="font-size:22px;font-weight:700;color:'+esc(c.primary)+';line-height:1.15;margin-bottom:3px">Invoice</div>'
+          + '<div style="font-size:11px;color:'+esc(c.textGrey)+'">'+esc(tenure)+'</div>'
+        + '</div>'
+      + '</div>'
+
+      // BODY (table left + sidebar right)
+      + '<div style="display:flex;align-items:stretch;flex:1;min-height:0">'
+
+        // TABLE
+        + '<div style="flex:0 0 64%;max-width:64%;padding:14px 10px 14px 24px;display:flex;flex-direction:column">'
+          + '<table style="width:100%;border-collapse:collapse;flex-shrink:0;font-size:'+sz.fs+'px">'
+            + '<thead><tr style="background:'+esc(c.headerBg)+'">'
+              + '<th style="width:13%;font-weight:700;text-align:left;padding:'+pad+';font-size:'+sz.thFs+'px;color:#fff;border:1px solid '+esc(c.headerBg)+'">Date</th>'
+              + '<th style="width:71%;font-weight:700;text-align:left;padding:'+pad+';font-size:'+sz.thFs+'px;color:#fff;border:1px solid '+esc(c.headerBg)+'">Task Description</th>'
+              + '<th style="width:16%;font-weight:700;text-align:right;padding:'+pad+';font-size:'+sz.thFs+'px;color:#fff;border:1px solid '+esc(c.headerBg)+'">Time Required [Hrs]</th>'
+            + '</tr></thead>'
+            + '<tbody>' + rowsHTML + '</tbody>'
+          + '</table>'
+        + '</div>'
+
+        // SIDEBAR
+        + '<div style="flex:0 0 36%;max-width:36%;background:'+esc(c.sidebar)+';border-left:3px solid '+esc(c.primary)+';padding:16px 14px;display:flex;flex-direction:column;justify-content:flex-start">'
+          + sSection('Invoice Date', formatDisplayDate(invDate))
+          + '<div style="margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid '+esc(c.divider)+'">'
+            + '<div style="font-size:12px;font-weight:700;color:'+esc(c.primary)+';margin-bottom:2px">Amount Due (INR)</div>'
+            + '<div style="font-size:24px;font-weight:700;color:'+esc(c.primary)+';line-height:1.1">'+esc(formatINR(t.inr))+'</div>'
+          + '</div>'
+          + sSection('Billed To', billedTo)
+          + sSection('Invoice Number', invNum)
+          + '<div style="margin-bottom:0;padding-bottom:0">'
+            + '<div style="font-size:10px;font-weight:700;color:'+esc(c.primary)+';margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em">Payment Details</div>'
+            + pRow('Bank', bank) + pRow('Branch', branch) + pRow('Account #', account)
+            + pRow('IFSC Code', ifsc) + pRow('MICR Code', micr)
+          + '</div>'
+        + '</div>'
+
+      + '</div>' // end body
+      + '</div>' // end root container
+      + '</body></html>';
+
+    return html;
+  }
+
+  function esc(s) { return escapeHtml(s); }
+
+  function exportPDF() {
+    var btn = $('export-pdf-btn');
+    var spinner = $('export-spinner');
+    btn.disabled = true;
+    spinner.style.display = 'inline-block';
+    showToast('\u23F3 Generating PDF\u2026');
+
+    // Ensure render is fresh
+    renderInvoice();
+
+    // Build a self-contained HTML fragment with all styles fully inlined
+    var invoiceHTML = buildInvoiceHTML();
+
+    // Create a hidden container in the main document.
+    // We position it off-screen but keep it in-flow for proper layout computation.
+    var wrapper = document.createElement('div');
+    wrapper.id = 'pdf-capture-wrapper';
+    wrapper.style.cssText = 'position:fixed;left:0;top:0;width:794px;height:1123px;z-index:-9999;opacity:0;pointer-events:none;background:#fff;';
+    // Extract just the body content from our full HTML
+    var bodyMatch = invoiceHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    wrapper.innerHTML = bodyMatch ? bodyMatch[1] : invoiceHTML;
+    document.body.appendChild(wrapper);
+
+    // The capture target is the first child div (794x1123 invoice)
+    var captureTarget = wrapper.firstElementChild || wrapper;
+
+    // Make the capture target visible for rendering
+    captureTarget.style.opacity = '1';
+
+    // Wait for paint
+    requestAnimationFrame(function() {
+      setTimeout(function() {
+        // Temporarily make wrapper visible for html2canvas
+        wrapper.style.opacity = '1';
+        wrapper.style.zIndex = '99999';
+        
+        html2canvas(captureTarget, {
+          scale: 2,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          allowTaint: true,
+          removeContainer: false,
+          width: 794,
+          height: 1123,
+          windowWidth: 794,
+          windowHeight: 1123
+        }).then(function(canvas) {
+          if (wrapper.parentNode) document.body.removeChild(wrapper);
+
+          var jsPDF = window.jspdf.jsPDF;
+          var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+          var pageW = 210, pageH = 297;
+          var imgData = canvas.toDataURL('image/png');
+          pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH, undefined, 'FAST');
+
+          var invNum = cfgVal('cfg-inv-num') || 'invoice';
+          var invDate = cfgVal('cfg-inv-date') || 'export';
+          pdf.save('Invoice_' + invNum + '_' + invDate + '.pdf');
+
+          showToast('\u2705 PDF downloaded!');
+        }).catch(function(err) {
+          console.error('PDF export error:', err);
+          if (wrapper.parentNode) document.body.removeChild(wrapper);
+          showToast('\u274C PDF failed \u2014 trying browser print\u2026');
+          setTimeout(function() { window.print(); }, 300);
+        }).finally(function() {
+          btn.disabled = false;
+          spinner.style.display = 'none';
+        });
+      }, 300);
+    });
+  }
+
+  // ═══════════════ GOOGLE SHEETS ═══════════════
+  function openGSModal(){$('gs-modal-overlay').classList.add('open');$('gs-status').textContent='';}
+  function closeGSModal(){$('gs-modal-overlay').classList.remove('open');}
+  function fetchGoogleSheet(){
+    var raw=$('gs-sheet-id').value.trim();
+    if(!raw){$('gs-status').textContent='\u26A0 Enter a Spreadsheet ID or URL.';return;}
+    var m=raw.match(/\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/);
+    var id=m?m[1]:raw,st=$('gs-status');
+    st.textContent='\u23F3 Fetching\u2026';
+    var url='https://docs.google.com/spreadsheets/d/'+encodeURIComponent(id)+'/export?format=xlsx';
+    fetch(url).then(function(r){if(!r.ok)throw new Error('Direct failed');return r.arrayBuffer();})
+    .catch(function(){st.textContent='\u23F3 CORS proxy\u2026';return fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(url)).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer();});})
+    .then(function(b){loadWorkbook(b);$('file-name').textContent='GSheet: '+id.slice(0,12)+'\u2026';closeGSModal();showToast('\u2705 Loaded!');})
+    .catch(function(e){st.textContent='\u274C '+e.message;});
+  }
+
+  // ═══════════════ CLIPBOARD ═══════════════
+  function copyText(text){
+    if(navigator.clipboard&&navigator.clipboard.writeText){navigator.clipboard.writeText(text).then(function(){showToast('\uD83D\uDCCB Copied: '+text);}).catch(function(){fbCopy(text);});}else{fbCopy(text);}
+  }
+  function fbCopy(text){try{var ta=document.createElement('textarea');ta.value=text;ta.style.cssText='position:fixed;opacity:0';document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);showToast('\uD83D\uDCCB Copied: '+text);}catch(_){showToast('Copy failed');}}
+
+  // ═══════════════ EVENT LISTENERS ═══════════════
+  function initEvents() {
+    $('file-input').addEventListener('change',function(e){
+      var f=e.target.files&&e.target.files[0];if(!f)return;
+      $('file-name').textContent=f.name;
+      if (typeof XLSX === 'undefined') { showToast('\u274C SheetJS library not loaded yet. Wait a moment and try again.'); return; }
+      var reader=new FileReader();
+      reader.onerror=function(evt){
+        console.error('FileReader error:', evt);
+        showToast('\u274C Could not read file. Please try again.');
+      };
+      reader.onload=function(ev){
+        try {
+          loadWorkbook(ev.target.result);
+        } catch(err) {
+          console.error('File load error:', err);
+          showToast('\u274C ' + (err.message || String(err)));
+        }
+      };
+      reader.readAsArrayBuffer(f);
+    });
+    $('cfg-month').addEventListener('change',function(e){onSheetChange(e.target.value);});
+    ALL_CONFIG_INPUTS.forEach(function(id){var el=$(id);if(el)el.addEventListener('input',renderInvoice);});
+    $('save-info-btn').addEventListener('click',savePersonalInfo);
+    $('export-pdf-btn').addEventListener('click',exportPDF);
+    $('export-print-btn').addEventListener('click',function(){renderInvoice();requestAnimationFrame(function(){window.print();});});
+    $('copy-inv-btn').addEventListener('click',function(){var v=cfgVal('cfg-inv-num');if(!v){showToast('\u26A0 Empty');return;}copyText(v);});
+    $('google-sheets-btn').addEventListener('click',openGSModal);
+    $('gs-close-btn').addEventListener('click',closeGSModal);
+    $('gs-fetch-btn').addEventListener('click',fetchGoogleSheet);
+    $('gs-modal-overlay').addEventListener('click',function(e){if(e.target===$('gs-modal-overlay'))closeGSModal();});
+    $('gs-sheet-id').addEventListener('keydown',function(e){if(e.key==='Enter'){e.preventDefault();fetchGoogleSheet();}});
+    $$('.theme-swatch').forEach(function(sw){sw.addEventListener('click',function(){setTheme(sw.getAttribute('data-theme'));renderInvoice();});});
+  }
+
+  // ═══════════════ INIT ═══════════════
+  (function init(){
+    var d=new Date();
+    $('cfg-inv-date').value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    loadPersonalInfo(); setTheme(loadTheme()); initEvents(); renderInvoice();
+  })();
+  </script>
+</body>
+</html>
