@@ -102,8 +102,6 @@
     .action-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
     #export-pdf-btn{background:var(--th-primary);color:#fff}
     #export-pdf-btn:hover:not(:disabled){background:var(--th-accent)}
-    #export-print-btn{background:#555;color:#fff}
-    #export-print-btn:hover:not(:disabled){background:#333}
     #copy-inv-btn{background:var(--th-white);color:var(--th-primary);border:1px solid var(--th-primary)}
     #copy-inv-btn:hover{background:var(--th-light-bg)}
     #google-sheets-btn{background:#0f9d58;color:#fff}
@@ -266,7 +264,6 @@
   <!-- ═══════ ACTION BUTTONS ═══════ -->
   <div id="action-bar">
     <button class="action-btn" id="export-pdf-btn">&#x1f4c4; Export to PDF <span id="export-spinner"></span></button>
-    <button class="action-btn" id="export-print-btn">&#x1f5a8;&#xfe0f; Print (browser)</button>
     <button class="action-btn" id="copy-inv-btn">&#x1f4cb; Copy Invoice Number</button>
     <button class="action-btn" id="google-sheets-btn">&#x1f4ca; Load from Google Sheets</button>
   </div>
@@ -392,6 +389,39 @@
 
   function cfgVal(id) { var e = $(id); return e ? e.value.trim() : ''; }
   function cfgNum(id, fb) { var v = parseFloat(cfgVal(id)); return (isNaN(v)||v<0) ? fb : v; }
+
+  function sanitizeFilePart(value) {
+    return String(value || '')
+      .trim()
+      .replace(/[\\/:*?"<>|]+/g, '')
+      .replace(/\s+/g, '_');
+  }
+
+  function getExportPdfFileName() {
+    var monthSheet = cfgVal('cfg-month');
+    var invoiceDate = cfgVal('cfg-inv-date');
+    var match = monthSheet.match(/^\s*([A-Za-z]+)\s+(\d{4})\s*$/);
+    var month = '';
+    var year = '';
+
+    if (match) {
+      month = match[1];
+      year = match[2];
+    } else if (invoiceDate) {
+      var parts = invoiceDate.split('-').map(Number);
+      if (parts.length === 3 && !parts.some(isNaN)) {
+        month = [
+          'January','February','March','April','May','June',
+          'July','August','September','October','November','December'
+        ][parts[1] - 1] || '';
+        year = String(parts[0]);
+      }
+    }
+
+    month = sanitizeFilePart(month || 'Month');
+    year = sanitizeFilePart(year || 'Year');
+    return 'Invoice_' + month + '_' + year + '.pdf';
+  }
 
   // ═══════════════ XLSX PARSING ═══════════════
   function parseSheet(wb, name) {
@@ -613,6 +643,466 @@
     };
   }
 
+  var PDF_MM_PER_PX = 210 / 794;
+  var PDF_PT_PER_PX = 72 / 96;
+  var PDF_MM_PER_PT = 25.4 / 72;
+
+  function pxToMm(px) { return px * PDF_MM_PER_PX; }
+  function pxToPt(px) { return px * PDF_PT_PER_PX; }
+  function ptToMm(pt) { return pt * PDF_MM_PER_PT; }
+
+  function parseCssColor(color) {
+    var value = String(color || '').trim();
+    var match, parts, i;
+    if (!value) return [0, 0, 0];
+    if (value.charAt(0) === '#') {
+      value = value.slice(1);
+      if (value.length === 3) value = value.replace(/(.)/g, '$1$1');
+      if (value.length === 6) {
+        return [
+          parseInt(value.slice(0, 2), 16),
+          parseInt(value.slice(2, 4), 16),
+          parseInt(value.slice(4, 6), 16)
+        ];
+      }
+    }
+    match = value.match(/^rgba?\(([^)]+)\)$/i);
+    if (match) {
+      parts = match[1].split(',');
+      for (i = 0; i < 3; i++) parts[i] = Math.max(0, Math.min(255, parseInt(parts[i], 10) || 0));
+      return [parts[0], parts[1], parts[2]];
+    }
+    return [0, 0, 0];
+  }
+
+  function setPdfColor(pdf, method, color) {
+    var rgb = parseCssColor(color);
+    pdf[method](rgb[0], rgb[1], rgb[2]);
+  }
+
+  function normalizePdfText(value) {
+    return String(value == null ? '' : value)
+      .replace(/\u20B9/g, 'INR ')
+      .replace(/\u2022/g, ' | ')
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\u2026/g, '...')
+      .replace(/\u00a0/g, ' ')
+      .replace(/[^\x20-\x7E\n]/g, '?');
+  }
+
+  function splitPdfText(pdf, text, maxWidth, fontSize, fontStyle) {
+    pdf.setFont('helvetica', fontStyle || 'normal');
+    pdf.setFontSize(fontSize);
+    return pdf.splitTextToSize(normalizePdfText(text || '--'), Math.max(maxWidth, 1));
+  }
+
+  function getPdfTextHeight(lines, fontSize, lineHeightFactor) {
+    return Math.max(1, (lines && lines.length) || 0) * ptToMm(fontSize) * (lineHeightFactor || 1.15);
+  }
+
+  function drawPdfText(pdf, lines, x, y, maxWidth, fontSize, fontStyle, color, align, lineHeightFactor) {
+    pdf.setFont('helvetica', fontStyle || 'normal');
+    pdf.setFontSize(fontSize);
+    setPdfColor(pdf, 'setTextColor', color);
+    pdf.text(lines, align === 'right' ? x + maxWidth : x, y, {
+      align: align || 'left',
+      baseline: 'top',
+      lineHeightFactor: lineHeightFactor || 1.15
+    });
+  }
+
+  function drawPdfCell(pdf, x, y, w, h, opts) {
+    setPdfColor(pdf, 'setDrawColor', opts.borderColor);
+    pdf.setLineWidth(opts.lineWidth || 0.2);
+    if (opts.fillColor) {
+      setPdfColor(pdf, 'setFillColor', opts.fillColor);
+      pdf.rect(x, y, w, h, 'FD');
+    } else {
+      pdf.rect(x, y, w, h, 'S');
+    }
+    drawPdfText(
+      pdf,
+      opts.lines,
+      x + opts.padH,
+      y + opts.padV,
+      w - (opts.padH * 2),
+      opts.fontSize,
+      opts.fontStyle,
+      opts.textColor,
+      opts.align,
+      opts.lineHeight
+    );
+  }
+
+  function formatPdfMoney(amount) {
+    return formatINR(amount).replace(/\u20B9/g, 'INR ');
+  }
+
+  function getPdfInvoiceData() {
+    var t = computeTotals();
+    var c = resolveThemeColors();
+    var placeholder = '--';
+    var addr1 = cfgVal('cfg-addr1');
+    var addr2 = cfgVal('cfg-addr2');
+
+    return {
+      totals: t,
+      colors: c,
+      rows: state.sheetData.slice(),
+      sz: getAutoFitSizing(state.sheetData.length),
+      name: cfgVal('cfg-name') || 'Your Name',
+      email: cfgVal('cfg-email') || 'email@example.com',
+      phone: cfgVal('cfg-phone') || placeholder,
+      address: [addr1, addr2].filter(Boolean).join(', ') || placeholder,
+      tenure: cfgVal('cfg-tenure') || placeholder,
+      invoiceDate: formatDisplayDate(cfgVal('cfg-inv-date')) || placeholder,
+      billedTo: cfgVal('cfg-billed-to') || placeholder,
+      invoiceNumber: cfgVal('cfg-inv-num') || placeholder,
+      bank: cfgVal('cfg-bank') || placeholder,
+      branch: cfgVal('cfg-branch') || placeholder,
+      account: cfgVal('cfg-account') || placeholder,
+      ifsc: cfgVal('cfg-ifsc') || placeholder,
+      micr: cfgVal('cfg-micr') || placeholder,
+      amountDue: formatPdfMoney(t.inr),
+      totalHours: t.hours.toFixed(2)
+    };
+  }
+
+  function buildPdfTableLayout(pdf, model, tableW, maxHeight) {
+    var sz = model.sz;
+    var cols = [tableW * 0.13, tableW * 0.71, tableW * 0.16];
+    var scale = 1;
+    var layout = null;
+    var i, row, padH, padV, fsPt, thFsPt, lineH, totalHeight, rows, dateLines, descLines, hourLines, rowHeight, emptyLines;
+
+    while (scale >= 0.7) {
+      padH = pxToMm((sz.pad + 2) * scale);
+      padV = pxToMm(sz.pad * scale);
+      fsPt = pxToPt(sz.fs * scale);
+      thFsPt = pxToPt(sz.thFs * scale);
+      lineH = sz.lh;
+      totalHeight = 0;
+      rows = [];
+
+      layout = {
+        cols: cols,
+        padH: padH,
+        padV: padV,
+        fsPt: fsPt,
+        thFsPt: thFsPt,
+        lineH: lineH,
+        headerLines: [
+          splitPdfText(pdf, 'Date', cols[0] - 2 * padH, thFsPt, 'bold'),
+          splitPdfText(pdf, 'Task Description', cols[1] - 2 * padH, thFsPt, 'bold'),
+          splitPdfText(pdf, 'Time Required [Hrs]', cols[2] - 2 * padH, thFsPt, 'bold')
+        ]
+      };
+      layout.headerHeight = Math.max(
+        getPdfTextHeight(layout.headerLines[0], thFsPt, 1.15),
+        getPdfTextHeight(layout.headerLines[1], thFsPt, 1.15),
+        getPdfTextHeight(layout.headerLines[2], thFsPt, 1.15)
+      ) + (padV * 2);
+      totalHeight += layout.headerHeight;
+
+      if (!model.rows.length) {
+        emptyLines = splitPdfText(pdf, 'Upload a timesheet to populate', tableW - 2 * padH, fsPt, 'normal');
+        rows.push({
+          kind: 'empty',
+          fillColor: model.colors.white,
+          textColor: '#aaaaaa',
+          fontStyle: 'normal',
+          height: getPdfTextHeight(emptyLines, fsPt, lineH) + (padV * 2),
+          lines: [emptyLines]
+        });
+      } else {
+        for (i = 0; i < model.rows.length; i++) {
+          row = model.rows[i];
+          dateLines = splitPdfText(pdf, formatDateCell(row.date), cols[0] - 2 * padH, fsPt, 'normal');
+          descLines = splitPdfText(pdf, row.desc, cols[1] - 2 * padH, fsPt, 'normal');
+          hourLines = splitPdfText(pdf, String(row.hours), cols[2] - 2 * padH, fsPt, 'normal');
+          rowHeight = Math.max(
+            getPdfTextHeight(dateLines, fsPt, lineH),
+            getPdfTextHeight(descLines, fsPt, lineH),
+            getPdfTextHeight(hourLines, fsPt, lineH)
+          ) + (padV * 2);
+          rows.push({
+            kind: 'data',
+            fillColor: i % 2 === 0 ? model.colors.white : model.colors.rowAlt,
+            textColor: model.colors.textDark,
+            fontStyle: 'normal',
+            height: rowHeight,
+            lines: [dateLines, descLines, hourLines]
+          });
+        }
+
+        rows.push({
+          kind: 'total',
+          fillColor: model.colors.rowAlt,
+          textColor: model.colors.textDark,
+          fontStyle: 'bold',
+          height: getPdfTextHeight(splitPdfText(pdf, 'Total Hours', cols[1] - 2 * padH, fsPt, 'bold'), fsPt, lineH) + (padV * 2),
+          lines: [
+            splitPdfText(pdf, '', cols[0] - 2 * padH, fsPt, 'bold'),
+            splitPdfText(pdf, 'Total Hours', cols[1] - 2 * padH, fsPt, 'bold'),
+            splitPdfText(pdf, model.totalHours, cols[2] - 2 * padH, fsPt, 'bold')
+          ]
+        });
+
+        rows.push({
+          kind: 'amount',
+          fillColor: model.colors.amountBg,
+          textColor: model.colors.primary,
+          fontStyle: 'bold',
+          height: getPdfTextHeight(splitPdfText(pdf, 'Total Amount INR', cols[1] - 2 * padH, fsPt, 'bold'), fsPt, lineH) + (padV * 2),
+          lines: [
+            splitPdfText(pdf, '', cols[0] - 2 * padH, fsPt, 'bold'),
+            splitPdfText(pdf, 'Total Amount INR', cols[1] - 2 * padH, fsPt, 'bold'),
+            splitPdfText(pdf, model.amountDue, cols[2] - 2 * padH, fsPt, 'bold')
+          ]
+        });
+      }
+
+      for (i = 0; i < rows.length; i++) totalHeight += rows[i].height;
+      layout.rows = rows;
+      layout.totalHeight = totalHeight;
+
+      if (totalHeight <= maxHeight) break;
+      scale -= 0.05;
+    }
+
+    return layout;
+  }
+
+  function drawPdfSidebarSection(pdf, x, y, width, label, value, colors, withDivider) {
+    var labelPt = pxToPt(10);
+    var valuePt = pxToPt(12);
+    var labelLines = splitPdfText(pdf, label, width, labelPt, 'normal');
+    var valueLines = splitPdfText(pdf, value, width, valuePt, 'normal');
+    var labelH = getPdfTextHeight(labelLines, labelPt, 1.15);
+    var valueH = getPdfTextHeight(valueLines, valuePt, 1.2);
+
+    drawPdfText(pdf, labelLines, x, y, width, labelPt, 'normal', colors.textGrey, 'left', 1.15);
+    drawPdfText(pdf, valueLines, x, y + labelH + 0.6, width, valuePt, 'normal', colors.textDark, 'left', 1.2);
+
+    y += labelH + valueH + 1.8;
+    if (withDivider !== false) {
+      setPdfColor(pdf, 'setDrawColor', colors.divider);
+      pdf.setLineWidth(0.2);
+      pdf.line(x, y + 1.2, x + width, y + 1.2);
+      y += 4.4;
+    }
+    return y;
+  }
+
+  function drawInvoicePdf(pdf) {
+    var model = getPdfInvoiceData();
+    var colors = model.colors;
+    var pageW = 210;
+    var pageH = 297;
+    var headerPadTop = pxToMm(24);
+    var headerPadLeft = pxToMm(28);
+    var headerPadRight = pxToMm(28);
+    var headerPadBottom = pxToMm(16);
+    var headerGap = pxToMm(12);
+    var rightBlockW = 52;
+    var leftBlockW = pageW - headerPadLeft - headerPadRight - headerGap - rightBlockW;
+    var namePt = pxToPt(model.sz.nameFs);
+    var smallPt = pxToPt(11);
+    var titlePt = pxToPt(22);
+    var lineHSmall = 1.15;
+    var lineHName = 1.1;
+    var nameLines = splitPdfText(pdf, model.name, leftBlockW, namePt, 'bold');
+    var contactLines = splitPdfText(pdf, model.email + ' | ' + model.phone, leftBlockW, smallPt, 'normal');
+    var addressLines = splitPdfText(pdf, model.address, leftBlockW, smallPt, 'normal');
+    var titleLines = splitPdfText(pdf, 'Invoice', rightBlockW, titlePt, 'bold');
+    var tenureLines = splitPdfText(pdf, model.tenure, rightBlockW, smallPt, 'normal');
+    var leftH = getPdfTextHeight(nameLines, namePt, lineHName) + 0.8 + getPdfTextHeight(contactLines, smallPt, lineHSmall) + 0.6 + getPdfTextHeight(addressLines, smallPt, lineHSmall);
+    var rightH = getPdfTextHeight(titleLines, titlePt, 1.1) + 0.8 + getPdfTextHeight(tenureLines, smallPt, lineHSmall);
+    var headerH = headerPadTop + Math.max(leftH, rightH) + headerPadBottom;
+    var bodyY = headerH;
+    var tableX = pxToMm(24);
+    var tableY = bodyY + pxToMm(14);
+    var sidebarX = pageW * 0.64;
+    var sidebarW = pageW - sidebarX;
+    var tableW = sidebarX - tableX - pxToMm(10);
+    var tableMaxH = pageH - tableY - pxToMm(14);
+    var table = buildPdfTableLayout(pdf, model, tableW, tableMaxH);
+    var x, y, i, row, paymentLabelW, paymentGap, paymentValueW, labelLines, valueLines, rowHeight;
+    var sidebarInnerW = sidebarW - pxToMm(28);
+    var invoiceDateLabelLines = splitPdfText(pdf, 'Invoice Date', sidebarInnerW, pxToPt(10), 'normal');
+    var invoiceDateValueLines = splitPdfText(pdf, model.invoiceDate, sidebarInnerW, pxToPt(12), 'normal');
+    var amountDueLabelLines = splitPdfText(pdf, 'Amount Due (INR)', sidebarInnerW, pxToPt(12), 'bold');
+    var amountDueValueLines = splitPdfText(pdf, model.amountDue, sidebarInnerW, pxToPt(24), 'bold');
+
+    setPdfColor(pdf, 'setFillColor', colors.white);
+    pdf.rect(0, 0, pageW, pageH, 'F');
+
+    y = headerPadTop;
+    drawPdfText(pdf, nameLines, headerPadLeft, y, leftBlockW, namePt, 'bold', colors.primary, 'left', lineHName);
+    y += getPdfTextHeight(nameLines, namePt, lineHName) + 0.8;
+    drawPdfText(pdf, contactLines, headerPadLeft, y, leftBlockW, smallPt, 'normal', colors.textGrey, 'left', lineHSmall);
+    y += getPdfTextHeight(contactLines, smallPt, lineHSmall) + 0.6;
+    drawPdfText(pdf, addressLines, headerPadLeft, y, leftBlockW, smallPt, 'normal', colors.textGrey, 'left', lineHSmall);
+
+    y = headerPadTop;
+    x = pageW - headerPadRight - rightBlockW;
+    drawPdfText(pdf, titleLines, x, y, rightBlockW, titlePt, 'bold', colors.primary, 'right', 1.1);
+    y += getPdfTextHeight(titleLines, titlePt, 1.1) + 0.8;
+    drawPdfText(pdf, tenureLines, x, y, rightBlockW, smallPt, 'normal', colors.textGrey, 'right', lineHSmall);
+
+    setPdfColor(pdf, 'setDrawColor', colors.primary);
+    pdf.setLineWidth(pxToMm(3));
+    pdf.line(0, headerH, pageW, headerH);
+
+    setPdfColor(pdf, 'setFillColor', colors.sidebar);
+    pdf.rect(sidebarX, bodyY, sidebarW, pageH - bodyY, 'F');
+    setPdfColor(pdf, 'setDrawColor', colors.primary);
+    pdf.setLineWidth(pxToMm(3));
+    pdf.line(sidebarX, bodyY, sidebarX, pageH);
+
+    x = tableX;
+    y = tableY;
+    drawPdfCell(pdf, x, y, table.cols[0], table.headerHeight, {
+      lines: table.headerLines[0],
+      padH: table.padH,
+      padV: table.padV,
+      fontSize: table.thFsPt,
+      fontStyle: 'bold',
+      textColor: colors.white,
+      fillColor: colors.headerBg,
+      borderColor: colors.headerBg,
+      align: 'left',
+      lineHeight: 1.15
+    });
+    drawPdfCell(pdf, x + table.cols[0], y, table.cols[1], table.headerHeight, {
+      lines: table.headerLines[1],
+      padH: table.padH,
+      padV: table.padV,
+      fontSize: table.thFsPt,
+      fontStyle: 'bold',
+      textColor: colors.white,
+      fillColor: colors.headerBg,
+      borderColor: colors.headerBg,
+      align: 'left',
+      lineHeight: 1.15
+    });
+    drawPdfCell(pdf, x + table.cols[0] + table.cols[1], y, table.cols[2], table.headerHeight, {
+      lines: table.headerLines[2],
+      padH: table.padH,
+      padV: table.padV,
+      fontSize: table.thFsPt,
+      fontStyle: 'bold',
+      textColor: colors.white,
+      fillColor: colors.headerBg,
+      borderColor: colors.headerBg,
+      align: 'right',
+      lineHeight: 1.15
+    });
+    y += table.headerHeight;
+
+    for (i = 0; i < table.rows.length; i++) {
+      row = table.rows[i];
+      if (row.kind === 'empty') {
+        drawPdfCell(pdf, x, y, tableW, row.height, {
+          lines: row.lines[0],
+          padH: table.padH,
+          padV: table.padV,
+          fontSize: table.fsPt,
+          fontStyle: row.fontStyle,
+          textColor: row.textColor,
+          fillColor: row.fillColor,
+          borderColor: colors.border,
+          align: 'left',
+          lineHeight: table.lineH
+        });
+      } else {
+        drawPdfCell(pdf, x, y, table.cols[0], row.height, {
+          lines: row.lines[0],
+          padH: table.padH,
+          padV: table.padV,
+          fontSize: table.fsPt,
+          fontStyle: row.fontStyle,
+          textColor: row.textColor,
+          fillColor: row.fillColor,
+          borderColor: colors.border,
+          align: 'left',
+          lineHeight: table.lineH
+        });
+        drawPdfCell(pdf, x + table.cols[0], y, table.cols[1], row.height, {
+          lines: row.lines[1],
+          padH: table.padH,
+          padV: table.padV,
+          fontSize: table.fsPt,
+          fontStyle: row.fontStyle,
+          textColor: row.textColor,
+          fillColor: row.fillColor,
+          borderColor: colors.border,
+          align: 'left',
+          lineHeight: table.lineH
+        });
+        drawPdfCell(pdf, x + table.cols[0] + table.cols[1], y, table.cols[2], row.height, {
+          lines: row.lines[2],
+          padH: table.padH,
+          padV: table.padV,
+          fontSize: table.fsPt,
+          fontStyle: row.fontStyle,
+          textColor: row.textColor,
+          fillColor: row.fillColor,
+          borderColor: colors.border,
+          align: 'right',
+          lineHeight: table.lineH
+        });
+      }
+      y += row.height;
+    }
+
+    x = sidebarX + pxToMm(14);
+    y = bodyY + pxToMm(16);
+    drawPdfText(pdf, invoiceDateLabelLines, x, y, sidebarInnerW, pxToPt(10), 'normal', colors.textGrey, 'left', 1.15);
+    y += getPdfTextHeight(invoiceDateLabelLines, pxToPt(10), 1.15) + 0.6;
+    drawPdfText(pdf, invoiceDateValueLines, x, y, sidebarInnerW, pxToPt(12), 'normal', colors.textDark, 'left', 1.2);
+    y += getPdfTextHeight(invoiceDateValueLines, pxToPt(12), 1.2) + 3.2;
+    setPdfColor(pdf, 'setDrawColor', colors.divider);
+    pdf.setLineWidth(0.2);
+    pdf.line(x, y, sidebarX + sidebarW - pxToMm(14), y);
+    y += 3.2;
+
+    drawPdfText(pdf, amountDueLabelLines, x, y, sidebarInnerW, pxToPt(12), 'bold', colors.primary, 'left', 1.15);
+    y += getPdfTextHeight(amountDueLabelLines, pxToPt(12), 1.15) + 0.8;
+    drawPdfText(pdf, amountDueValueLines, x, y, sidebarInnerW, pxToPt(24), 'bold', colors.primary, 'left', 1.05);
+    y += getPdfTextHeight(amountDueValueLines, pxToPt(24), 1.05) + 3.2;
+    setPdfColor(pdf, 'setDrawColor', colors.divider);
+    pdf.line(x, y, sidebarX + sidebarW - pxToMm(14), y);
+    y += 3.2;
+
+    y = drawPdfSidebarSection(pdf, x, y, sidebarInnerW, 'Billed To', model.billedTo, colors, true);
+    y = drawPdfSidebarSection(pdf, x, y, sidebarInnerW, 'Invoice Number', model.invoiceNumber, colors, true);
+
+    drawPdfText(pdf, splitPdfText(pdf, 'Payment Details', sidebarInnerW, pxToPt(10), 'bold'), x, y, sidebarInnerW, pxToPt(10), 'bold', colors.primary, 'left', 1.15);
+    y += getPdfTextHeight(splitPdfText(pdf, 'Payment Details', sidebarInnerW, pxToPt(10), 'bold'), pxToPt(10), 1.15) + 1.6;
+
+    paymentLabelW = 16;
+    paymentGap = 2;
+    paymentValueW = sidebarInnerW - paymentLabelW - paymentGap;
+    [
+      ['Bank', model.bank],
+      ['Branch', model.branch],
+      ['Account #', model.account],
+      ['IFSC Code', model.ifsc],
+      ['MICR Code', model.micr]
+    ].forEach(function(pair) {
+      labelLines = splitPdfText(pdf, pair[0], paymentLabelW, pxToPt(10), 'normal');
+      valueLines = splitPdfText(pdf, pair[1], paymentValueW, pxToPt(10), 'bold');
+      rowHeight = Math.max(
+        getPdfTextHeight(labelLines, pxToPt(10), 1.1),
+        getPdfTextHeight(valueLines, pxToPt(10), 1.1)
+      );
+      drawPdfText(pdf, labelLines, x, y, paymentLabelW, pxToPt(10), 'normal', colors.textGrey, 'left', 1.1);
+      drawPdfText(pdf, valueLines, x + paymentLabelW + paymentGap, y, paymentValueW, pxToPt(10), 'bold', colors.textDark, 'right', 1.1);
+      y += rowHeight + 0.9;
+    });
+  }
+
   /**
    * Build a complete standalone HTML page string for the invoice,
    * with ALL styles hardcoded inline — no CSS variables, no external CSS.
@@ -751,71 +1241,61 @@
     spinner.style.display = 'inline-block';
     showToast('\u23F3 Generating PDF\u2026');
 
-    // Ensure render is fresh
     renderInvoice();
 
-    // Build a self-contained HTML fragment with all styles fully inlined
-    var invoiceHTML = buildInvoiceHTML();
+    try {
+      if (typeof html2canvas === 'undefined') throw new Error('html2canvas library not loaded');
+      if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('jsPDF library not loaded');
 
-    // Create a hidden container in the main document.
-    // We position it off-screen but keep it in-flow for proper layout computation.
-    var wrapper = document.createElement('div');
-    wrapper.id = 'pdf-capture-wrapper';
-    wrapper.style.cssText = 'position:fixed;left:0;top:0;width:794px;height:1123px;z-index:-9999;opacity:0;pointer-events:none;background:#fff;';
-    // Extract just the body content from our full HTML
-    var bodyMatch = invoiceHTML.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-    wrapper.innerHTML = bodyMatch ? bodyMatch[1] : invoiceHTML;
-    document.body.appendChild(wrapper);
+      var source = $('invoice-preview');
+      if (!source) throw new Error('Invoice preview not found');
 
-    // The capture target is the first child div (794x1123 invoice)
-    var captureTarget = wrapper.firstElementChild || wrapper;
+      var wrapper = document.createElement('div');
+      var captureTarget = source.cloneNode(true);
+      wrapper.id = 'pdf-capture-wrapper';
+      wrapper.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;height:1123px;z-index:-1;opacity:1;pointer-events:none;background:#fff;overflow:hidden;';
+      captureTarget.style.width = '794px';
+      captureTarget.style.height = '1123px';
+      captureTarget.style.margin = '0';
+      captureTarget.style.boxShadow = 'none';
+      captureTarget.style.borderRadius = '0';
+      wrapper.appendChild(captureTarget);
+      document.body.appendChild(wrapper);
 
-    // Make the capture target visible for rendering
-    captureTarget.style.opacity = '1';
+      var scale = Math.max(4, Math.ceil(window.devicePixelRatio || 1));
+      html2canvas(captureTarget, {
+        scale: scale,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        logging: false,
+        removeContainer: true,
+        width: 794,
+        height: 1123,
+        windowWidth: Math.max(window.innerWidth || 0, 1200),
+        windowHeight: 1123
+      }).then(function(canvas) {
+        if (wrapper.parentNode) document.body.removeChild(wrapper);
 
-    // Wait for paint
-    requestAnimationFrame(function() {
-      setTimeout(function() {
-        // Temporarily make wrapper visible for html2canvas
-        wrapper.style.opacity = '1';
-        wrapper.style.zIndex = '99999';
-        
-        html2canvas(captureTarget, {
-          scale: 2,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          allowTaint: true,
-          removeContainer: false,
-          width: 794,
-          height: 1123,
-          windowWidth: 794,
-          windowHeight: 1123
-        }).then(function(canvas) {
-          if (wrapper.parentNode) document.body.removeChild(wrapper);
-
-          var jsPDF = window.jspdf.jsPDF;
-          var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-          var pageW = 210, pageH = 297;
-          var imgData = canvas.toDataURL('image/png');
-          pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH, undefined, 'FAST');
-
-          var invNum = cfgVal('cfg-inv-num') || 'invoice';
-          var invDate = cfgVal('cfg-inv-date') || 'export';
-          pdf.save('Invoice_' + invNum + '_' + invDate + '.pdf');
-
-          showToast('\u2705 PDF downloaded!');
-        }).catch(function(err) {
-          console.error('PDF export error:', err);
-          if (wrapper.parentNode) document.body.removeChild(wrapper);
-          showToast('\u274C PDF failed \u2014 trying browser print\u2026');
-          setTimeout(function() { window.print(); }, 300);
-        }).finally(function() {
-          btn.disabled = false;
-          spinner.style.display = 'none';
-        });
-      }, 300);
-    });
+        var jsPDF = window.jspdf.jsPDF;
+        var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: false });
+        var imgData = canvas.toDataURL('image/png');
+        pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'SLOW');
+        pdf.save(getExportPdfFileName());
+        showToast('\u2705 PDF downloaded!');
+      }).catch(function(err) {
+        console.error('PDF export error:', err);
+        if (wrapper.parentNode) document.body.removeChild(wrapper);
+        showToast('\u274C PDF export failed.');
+      }).finally(function() {
+        btn.disabled = false;
+        spinner.style.display = 'none';
+      });
+    } catch (err) {
+      console.error('PDF export error:', err);
+      showToast('\u274C PDF export failed.');
+      btn.disabled = false;
+      spinner.style.display = 'none';
+    }
   }
 
   // ═══════════════ GOOGLE SHEETS ═══════════════
@@ -865,7 +1345,6 @@
     ALL_CONFIG_INPUTS.forEach(function(id){var el=$(id);if(el)el.addEventListener('input',renderInvoice);});
     $('save-info-btn').addEventListener('click',savePersonalInfo);
     $('export-pdf-btn').addEventListener('click',exportPDF);
-    $('export-print-btn').addEventListener('click',function(){renderInvoice();requestAnimationFrame(function(){window.print();});});
     $('copy-inv-btn').addEventListener('click',function(){var v=cfgVal('cfg-inv-num');if(!v){showToast('\u26A0 Empty');return;}copyText(v);});
     $('google-sheets-btn').addEventListener('click',openGSModal);
     $('gs-close-btn').addEventListener('click',closeGSModal);
