@@ -2,7 +2,7 @@
 
 A minimal, single-file invoice generator that runs entirely in the browser. Upload an `.xlsx` timesheet, configure your details, preview a professional invoice, and export it as a pixel-perfect PDF. No server, no sign-up, and no data leaves your machine.
 
-**[Live Demo ->](https://your-username.github.io/InvoiceGenerator/)**
+**[Live Demo ->](invoice.aishkendle.dev)**
 
 ---
 
@@ -24,19 +24,9 @@ A minimal, single-file invoice generator that runs entirely in the browser. Uplo
 
 ## Getting Started
 
-### Option 1: Open Locally
-
 1. Clone or download this repository.
 2. Open `index.html` in any modern browser.
 3. No build step or install is required.
-
-### Option 2: Deploy to GitHub Pages
-
-1. Push this repo to GitHub.
-2. Go to **Settings -> Pages**.
-3. Under **Source**, select the `main` branch and `/ (root)` folder.
-4. Click **Save**.
-5. Your invoice generator will be live at `https://<username>.github.io/<repo-name>/`.
 
 ---
 
