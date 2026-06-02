@@ -111,7 +111,8 @@
 
     /* ═══════════════ INVOICE PREVIEW (screen) ═══════════════ */
     #invoice-wrapper{display:flex;justify-content:center}
-    #invoice-preview{
+    #invoice-preview{display:flex;flex-direction:column;gap:20px;align-items:center}
+    .invoice-page{
       width:794px;height:1123px;
       background:var(--th-white);
       box-shadow:0 4px 32px rgba(26,60,94,.13);
@@ -159,12 +160,24 @@
     .payment-row .p-value{font-size:10px;color:var(--th-text-dark);font-weight:600;text-align:right;word-break:break-all}
     .payment-heading{font-size:10px;font-weight:700;color:var(--th-primary);margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em}
 
+    /* Continuation pages (slim header, full-width table, no sidebar) */
+    .inv-cont-header{display:flex;justify-content:space-between;align-items:center;padding:14px 28px;border-bottom:2px solid var(--th-primary);flex-shrink:0;background:var(--th-white)}
+    .inv-cont-header .cont-left{display:flex;flex-direction:column;gap:1px;min-width:0}
+    .inv-cont-header .cont-name{font-size:14px;font-weight:700;color:var(--th-primary);line-height:1.1}
+    .inv-cont-header .cont-sub{font-size:10px;color:var(--th-text-grey)}
+    .inv-cont-header .cont-right{font-size:11px;color:var(--th-text-grey);text-align:right;flex-shrink:0;padding-left:12px}
+    .inv-cont-header .cont-right strong{color:var(--th-primary);font-weight:700}
+    .inv-table-wrap-full{flex:1 1 auto;padding:14px 24px;overflow:hidden;display:flex;flex-direction:column;min-height:0}
+    .inv-page-footer{padding:8px 28px 14px;font-size:10px;color:var(--th-text-grey);text-align:right;flex-shrink:0}
+
     /* ═══════════════ PRINT (fallback) ═══════════════ */
     @media print{
       html,body{margin:0!important;padding:0!important;background:#fff!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
       #app-header,#config-panel,#action-bar,#toast,#gs-modal-overlay{display:none!important}
       #invoice-wrapper{display:flex!important;justify-content:center!important;padding:0!important;margin:0!important}
-      #invoice-preview{width:794px!important;height:auto!important;min-height:0!important;margin:0!important;box-shadow:none!important;border-radius:0!important;page-break-inside:avoid!important;overflow:visible!important}
+      #invoice-preview{display:flex!important;flex-direction:column!important;gap:0!important;align-items:center!important;width:auto!important;height:auto!important;margin:0!important;box-shadow:none!important;border-radius:0!important;overflow:visible!important}
+      .invoice-page{width:794px!important;height:auto!important;min-height:0!important;margin:0!important;box-shadow:none!important;border-radius:0!important;page-break-after:always!important;page-break-inside:avoid!important;overflow:visible!important}
+      .invoice-page:last-child{page-break-after:auto!important}
       .inv-body{overflow:visible!important}
       .inv-table-wrap{overflow:visible!important}
       .inv-table thead tr,.inv-table thead th{background:var(--th-header-bg)!important;color:#fff!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
@@ -173,6 +186,8 @@
       .inv-row-amount td{background:var(--th-amount-bg)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
       .inv-sidebar{background:var(--th-sidebar)!important;border-left:3px solid var(--th-primary)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
       .inv-header{border-bottom:3px solid var(--th-primary)!important}
+      .inv-cont-header{border-bottom:2px solid var(--th-primary)!important;background:var(--th-white)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .inv-table-wrap-full{overflow:visible!important}
       .inv-name,.inv-title-label,.inv-amount-due-label,.inv-amount-due-value,.payment-heading,.inv-row-amount td{color:var(--th-primary)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
       @page{size:A4;margin:8mm}
     }
@@ -196,7 +211,7 @@
 
     /* ═══════════════ RESPONSIVE ═══════════════ */
     @media(max-width:860px){
-      #invoice-preview{width:100%!important;height:auto!important}
+      .invoice-page{width:100%!important;height:auto!important}
       .inv-body{flex-direction:column}
       .inv-table-wrap,.inv-sidebar{flex:0 0 100%!important;max-width:100%!important;border-right:none;border-left:none;border-top:1px solid var(--th-border);padding:16px}
     }
@@ -502,74 +517,15 @@
   }
 
   // ═══════════════ RENDER INVOICE ═══════════════
-  function renderInvoice() {
-    var t = computeTotals();
-    $('cfg-hours').value=t.hours.toFixed(2);
-    $('cfg-usd').value='$'+t.usd.toFixed(2);
-    $('cfg-inr').value=formatINR(t.inr);
-    $('computed-summary').textContent=t.hours.toFixed(2)+' hrs \u00D7 $'+t.rate+' \u00D7 '+t.fx+' = '+formatINR(t.inr);
-
-    var name=cfgVal('cfg-name')||'Your Name',email=cfgVal('cfg-email')||'email@example.com',phone=cfgVal('cfg-phone')||'\u2014';
-    var addr1=cfgVal('cfg-addr1'),addr2=cfgVal('cfg-addr2'),tenure=cfgVal('cfg-tenure')||'\u2014';
-    var invDate=cfgVal('cfg-inv-date'),billedTo=cfgVal('cfg-billed-to')||'\u2014',invNum=cfgVal('cfg-inv-num')||'\u2014';
-    var bank=cfgVal('cfg-bank')||'\u2014',branch=cfgVal('cfg-branch')||'\u2014',account=cfgVal('cfg-account')||'\u2014';
-    var ifsc=cfgVal('cfg-ifsc')||'\u2014',micr=cfgVal('cfg-micr')||'\u2014';
-    var address=[addr1,addr2].filter(Boolean).join(', ')||'\u2014';
-
-    var sz=getAutoFitSizing(state.sheetData.length);
-    var padCSS=sz.pad+'px '+(sz.pad+2)+'px';
-
-    var pv=$('invoice-preview');
-    while(pv.firstChild)pv.removeChild(pv.firstChild);
-
-    // HEADER
+  function buildHeaderEl(name, email, phone, address, tenure, sz) {
     var nameEl=mk('div',{className:'inv-name',textContent:name}); nameEl.style.fontSize=sz.nameFs+'px';
-    pv.appendChild(mk('div',{className:'inv-header'},[
+    return mk('div',{className:'inv-header'},[
       mk('div',{className:'inv-header-left'},[nameEl,mk('div',{className:'inv-contact',textContent:email+' \u2022 '+phone}),mk('div',{className:'inv-address',textContent:address})]),
       mk('div',{className:'inv-header-right'},[mk('div',{className:'inv-title-label',textContent:'Invoice'}),mk('div',{className:'inv-tenure',textContent:tenure})])
-    ]));
+    ]);
+  }
 
-    // BODY
-    var body=mk('div',{className:'inv-body'});
-    var tw=mk('div',{className:'inv-table-wrap'});
-    var tbl=mk('table',{className:'inv-table'}); tbl.style.fontSize=sz.fs+'px';
-
-    // thead
-    var thD=mk('th',{textContent:'Date'}),thT=mk('th',{textContent:'Task Description'}),thH=mk('th',{textContent:'Time Required [Hrs]'});
-    thH.style.textAlign='right';
-    [thD,thT,thH].forEach(function(th){th.style.padding=padCSS;th.style.fontSize=sz.thFs+'px';});
-    tbl.appendChild(mk('thead',null,[mk('tr',null,[thD,thT,thH])]));
-
-    // tbody
-    var tb=mk('tbody');
-    if(!state.sheetData.length){
-      var ed=mk('td',{textContent:'Upload a timesheet to populate'}); ed.setAttribute('colspan','3'); ed.style.cssText='text-align:center;color:#aaa;padding:20px;';
-      tb.appendChild(mk('tr',null,[ed]));
-    } else {
-      state.sheetData.forEach(function(row){
-        var tr=mk('tr');
-        var d1=mk('td',{textContent:formatDateCell(row.date)});
-        var d2=mk('td'); d2.innerHTML=escapeHtml(row.desc).replace(/\n/g,'<br>');
-        var d3=mk('td',{textContent:String(row.hours)}); d3.style.textAlign='right';
-        [d1,d2,d3].forEach(function(td){td.style.padding=padCSS;td.style.lineHeight=String(sz.lh);td.style.fontSize=sz.fs+'px';});
-        tr.appendChild(d1);tr.appendChild(d2);tr.appendChild(d3);tb.appendChild(tr);
-      });
-      // Total Hours
-      var rt=mk('tr',{className:'inv-row-total'});
-      var rtb=mk('td');rtb.style.padding=padCSS;
-      var rtl=mk('td',{textContent:'Total Hours'});rtl.style.padding=padCSS;
-      var rtv=mk('td',{textContent:t.hours.toFixed(2)});rtv.style.padding=padCSS;rtv.style.textAlign='right';
-      rt.appendChild(rtb);rt.appendChild(rtl);rt.appendChild(rtv);tb.appendChild(rt);
-      // Total Amount
-      var ra=mk('tr',{className:'inv-row-amount'});
-      var rab=mk('td');rab.style.padding=padCSS;
-      var ral=mk('td',{textContent:'Total Amount \u20B9'});ral.style.padding=padCSS;
-      var rav=mk('td',{textContent:formatINR(t.inr)});rav.style.padding=padCSS;rav.style.textAlign='right';
-      ra.appendChild(rab);ra.appendChild(ral);ra.appendChild(rav);tb.appendChild(ra);
-    }
-    tbl.appendChild(tb);tw.appendChild(tbl);body.appendChild(tw);
-
-    // SIDEBAR
+  function buildSidebarEl(t, invDate, billedTo, invNum, bank, branch, account, ifsc, micr) {
     var sb=mk('div',{className:'inv-sidebar'});
     sb.appendChild(mkSS('Invoice Date',formatDisplayDate(invDate)));
     var as=mk('div',{className:'sidebar-section'});
@@ -584,7 +540,195 @@
     ps.appendChild(mkPR('Account #',account));ps.appendChild(mkPR('IFSC Code',ifsc));
     ps.appendChild(mkPR('MICR Code',micr));
     sb.appendChild(ps);
-    body.appendChild(sb);pv.appendChild(body);
+    return sb;
+  }
+
+  function buildPageEl(headerEl, sidebarEl, sz, padCSS) {
+    var page=mk('div',{className:'invoice-page'});
+    page.appendChild(headerEl);
+    var body=mk('div',{className:'inv-body'});
+    var tw=mk('div',{className:'inv-table-wrap'});
+    var tbl=mk('table',{className:'inv-table'}); tbl.style.fontSize=sz.fs+'px';
+    var thD=mk('th',{textContent:'Date'}),thT=mk('th',{textContent:'Task Description'}),thH=mk('th',{textContent:'Time Required [Hrs]'});
+    thH.style.textAlign='right';
+    [thD,thT,thH].forEach(function(th){th.style.padding=padCSS;th.style.fontSize=sz.thFs+'px';});
+    tbl.appendChild(mk('thead',null,[mk('tr',null,[thD,thT,thH])]));
+    tbl.appendChild(mk('tbody'));
+    tw.appendChild(tbl); body.appendChild(tw); body.appendChild(sidebarEl);
+    page.appendChild(body);
+    return page;
+  }
+
+  function buildContHeaderEl(name, invNum, tenure) {
+    var left=mk('div',{className:'cont-left'},[
+      mk('div',{className:'cont-name',textContent:name}),
+      mk('div',{className:'cont-sub',textContent:tenure})
+    ]);
+    var right=mk('div',{className:'cont-right'});
+    right.innerHTML='<strong>Invoice</strong> (continued) &nbsp;\u2022&nbsp; #'+escapeHtml(invNum);
+    return mk('div',{className:'inv-cont-header'},[left,right]);
+  }
+
+  function buildContPageEl(name, invNum, tenure, sz, padCSS) {
+    var page=mk('div',{className:'invoice-page'});
+    page.appendChild(buildContHeaderEl(name, invNum, tenure));
+    var tw=mk('div',{className:'inv-table-wrap-full'});
+    var tbl=mk('table',{className:'inv-table'}); tbl.style.fontSize=sz.fs+'px';
+    var thD=mk('th',{textContent:'Date'}),thT=mk('th',{textContent:'Task Description'}),thH=mk('th',{textContent:'Time Required [Hrs]'});
+    thH.style.textAlign='right';
+    [thD,thT,thH].forEach(function(th){th.style.padding=padCSS;th.style.fontSize=sz.thFs+'px';});
+    tbl.appendChild(mk('thead',null,[mk('tr',null,[thD,thT,thH])]));
+    tbl.appendChild(mk('tbody'));
+    tw.appendChild(tbl); page.appendChild(tw);
+    page.appendChild(mk('div',{className:'inv-page-footer'})); // page indicator filled in later
+    return page;
+  }
+
+  function buildDataRowEl(row, sz, padCSS) {
+    var tr=mk('tr');
+    var d1=mk('td',{textContent:formatDateCell(row.date)});
+    var d2=mk('td'); d2.innerHTML=escapeHtml(row.desc).replace(/\n/g,'<br>');
+    var d3=mk('td',{textContent:String(row.hours)}); d3.style.textAlign='right';
+    [d1,d2,d3].forEach(function(td){td.style.padding=padCSS;td.style.lineHeight=String(sz.lh);td.style.fontSize=sz.fs+'px';});
+    tr.appendChild(d1);tr.appendChild(d2);tr.appendChild(d3);
+    return tr;
+  }
+
+  function buildTotalRowEl(t, padCSS) {
+    var rt=mk('tr',{className:'inv-row-total'});
+    var a=mk('td');a.style.padding=padCSS;
+    var b=mk('td',{textContent:'Total Hours'});b.style.padding=padCSS;
+    var c=mk('td',{textContent:t.hours.toFixed(2)});c.style.padding=padCSS;c.style.textAlign='right';
+    rt.appendChild(a);rt.appendChild(b);rt.appendChild(c);
+    return rt;
+  }
+
+  function buildAmountRowEl(t, padCSS) {
+    var ra=mk('tr',{className:'inv-row-amount'});
+    var a=mk('td');a.style.padding=padCSS;
+    var b=mk('td',{textContent:'Total Amount \u20B9'});b.style.padding=padCSS;
+    var c=mk('td',{textContent:formatINR(t.inr)});c.style.padding=padCSS;c.style.textAlign='right';
+    ra.appendChild(a);ra.appendChild(b);ra.appendChild(c);
+    return ra;
+  }
+
+  function renderInvoice() {
+    var t = computeTotals();
+    $('cfg-hours').value=t.hours.toFixed(2);
+    $('cfg-usd').value='$'+t.usd.toFixed(2);
+    $('cfg-inr').value=formatINR(t.inr);
+    $('computed-summary').textContent=t.hours.toFixed(2)+' hrs \u00D7 $'+t.rate+' \u00D7 '+t.fx+' = '+formatINR(t.inr);
+
+    var name=cfgVal('cfg-name')||'Your Name',email=cfgVal('cfg-email')||'email@example.com',phone=cfgVal('cfg-phone')||'\u2014';
+    var addr1=cfgVal('cfg-addr1'),addr2=cfgVal('cfg-addr2'),tenure=cfgVal('cfg-tenure')||'\u2014';
+    var invDate=cfgVal('cfg-inv-date'),billedTo=cfgVal('cfg-billed-to')||'\u2014',invNum=cfgVal('cfg-inv-num')||'\u2014';
+    var bank=cfgVal('cfg-bank')||'\u2014',branch=cfgVal('cfg-branch')||'\u2014',account=cfgVal('cfg-account')||'\u2014';
+    var ifsc=cfgVal('cfg-ifsc')||'\u2014',micr=cfgVal('cfg-micr')||'\u2014';
+    var address=[addr1,addr2].filter(Boolean).join(', ')||'\u2014';
+
+    // Fixed comfortable sizing — pagination handles overflow across multiple pages
+    var sz={fs:9,pad:4,lh:1.35,thFs:10,nameFs:26};
+    var padCSS=sz.pad+'px '+(sz.pad+2)+'px';
+
+    var pv=$('invoice-preview');
+    while(pv.firstChild)pv.removeChild(pv.firstChild);
+
+    // Empty state — single page (full layout)
+    if (!state.sheetData.length) {
+      var page0 = buildPageEl(
+        buildHeaderEl(name, email, phone, address, tenure, sz),
+        buildSidebarEl(t, invDate, billedTo, invNum, bank, branch, account, ifsc, micr),
+        sz, padCSS
+      );
+      pv.appendChild(page0);
+      var tb0 = page0.querySelector('tbody');
+      var ed = mk('td',{textContent:'Upload a timesheet to populate'});
+      ed.setAttribute('colspan','3'); ed.style.cssText='text-align:center;color:#aaa;padding:20px;';
+      tb0.appendChild(mk('tr',null,[ed]));
+      return;
+    }
+
+    // Page 1 — full layout (header + sidebar + narrower table).
+    // Continuation pages — slim header + full-width table only (no repeated sidebar/payment info).
+    var firstPage = buildPageEl(
+      buildHeaderEl(name, email, phone, address, tenure, sz),
+      buildSidebarEl(t, invDate, billedTo, invNum, bank, branch, account, ifsc, micr),
+      sz, padCSS
+    );
+    pv.appendChild(firstPage);
+
+    var remaining = state.sheetData.slice();
+    var isFirst = true;
+    var safety = 0;
+
+    while (remaining.length > 0 && safety < 200) {
+      safety++;
+      var page = isFirst ? firstPage : buildContPageEl(name, invNum, tenure, sz, padCSS);
+      if (!isFirst) pv.appendChild(page);
+
+      var tw  = page.querySelector(isFirst ? '.inv-table-wrap' : '.inv-table-wrap-full');
+      var tbl = tw.querySelector('.inv-table');
+      var tb  = tbl.querySelector('tbody');
+
+      // Compute the actual visual bottom limit of the table area (in viewport coords).
+      // Using bounding-rects is robust against flex-child sizing quirks that can make
+      // tbody.offsetHeight misreport the table's natural height inside a flex column wrapper.
+      var twRect    = tw.getBoundingClientRect();
+      var pgRect    = page.getBoundingClientRect();
+      var twStyle   = window.getComputedStyle(tw);
+      var padBottom = parseFloat(twStyle.paddingBottom) || 0;
+      // Use the smaller of (table-wrap content bottom) and (page box bottom) and
+      // subtract a generous safety margin. html2canvas can render wrapped text
+      // with slightly different line metrics than the live DOM (sub-pixel rounding,
+      // font hinting differences), so we keep ~24px of head-room to prevent the
+      // last row from being clipped by the page's overflow:hidden boundary.
+      var SAFETY_MARGIN_PX = 24;
+      var bottomLimit = Math.min(twRect.bottom - padBottom, pgRect.bottom) - SAFETY_MARGIN_PX;
+
+      var added = 0;
+      for (var i = 0; i < remaining.length; i++) {
+        var tr = buildDataRowEl(remaining[i], sz, padCSS);
+        tb.appendChild(tr);
+        if (tr.getBoundingClientRect().bottom > bottomLimit) { tb.removeChild(tr); break; }
+        added++;
+      }
+      if (added === 0) {
+        tb.appendChild(buildDataRowEl(remaining[0], sz, padCSS));
+        added = 1;
+      }
+
+      var lastBatch = (added === remaining.length);
+      if (lastBatch) {
+        var rtEl = buildTotalRowEl(t, padCSS);
+        var raEl = buildAmountRowEl(t, padCSS);
+        tb.appendChild(rtEl); tb.appendChild(raEl);
+        if (raEl.getBoundingClientRect().bottom > bottomLimit) {
+          tb.removeChild(raEl); tb.removeChild(rtEl);
+          var contPage = buildContPageEl(name, invNum, tenure, sz, padCSS);
+          pv.appendChild(contPage);
+          var contTb = contPage.querySelector('tbody');
+          contTb.appendChild(buildTotalRowEl(t, padCSS));
+          contTb.appendChild(buildAmountRowEl(t, padCSS));
+        }
+        remaining = [];
+      } else {
+        remaining = remaining.slice(added);
+      }
+      isFirst = false;
+    }
+
+    // Add "Page X of Y" indicator when there are multiple pages
+    var pages = pv.querySelectorAll('.invoice-page');
+    if (pages.length > 1) {
+      for (var p = 0; p < pages.length; p++) {
+        var footer = pages[p].querySelector('.inv-page-footer');
+        if (!footer) {
+          footer = mk('div',{className:'inv-page-footer'});
+          pages[p].appendChild(footer);
+        }
+        footer.textContent = 'Page ' + (p+1) + ' of ' + pages.length;
+      }
+    }
   }
 
   function mkSS(l,v){return mk('div',{className:'sidebar-section'},[mk('div',{className:'sidebar-label',textContent:l}),mk('div',{className:'sidebar-value',textContent:v})]);}
@@ -1247,49 +1391,64 @@
       if (typeof html2canvas === 'undefined') throw new Error('html2canvas library not loaded');
       if (!window.jspdf || !window.jspdf.jsPDF) throw new Error('jsPDF library not loaded');
 
-      var source = $('invoice-preview');
-      if (!source) throw new Error('Invoice preview not found');
+      var pages = document.querySelectorAll('#invoice-preview .invoice-page');
+      if (!pages.length) throw new Error('Invoice preview not found');
 
-      var wrapper = document.createElement('div');
-      var captureTarget = source.cloneNode(true);
-      wrapper.id = 'pdf-capture-wrapper';
-      wrapper.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;height:1123px;z-index:-1;opacity:1;pointer-events:none;background:#fff;overflow:hidden;';
-      captureTarget.style.width = '794px';
-      captureTarget.style.height = '1123px';
-      captureTarget.style.margin = '0';
-      captureTarget.style.boxShadow = 'none';
-      captureTarget.style.borderRadius = '0';
-      wrapper.appendChild(captureTarget);
-      document.body.appendChild(wrapper);
-
+      var jsPDF = window.jspdf.jsPDF;
+      var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: false });
       var scale = Math.max(4, Math.ceil(window.devicePixelRatio || 1));
-      html2canvas(captureTarget, {
-        scale: scale,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        logging: false,
-        removeContainer: true,
-        width: 794,
-        height: 1123,
-        windowWidth: Math.max(window.innerWidth || 0, 1200),
-        windowHeight: 1123
-      }).then(function(canvas) {
-        if (wrapper.parentNode) document.body.removeChild(wrapper);
 
-        var jsPDF = window.jspdf.jsPDF;
-        var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: false });
-        var imgData = canvas.toDataURL('image/png');
-        pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'SLOW');
-        pdf.save(getExportPdfFileName());
-        showToast('\u2705 PDF downloaded!');
-      }).catch(function(err) {
-        console.error('PDF export error:', err);
-        if (wrapper.parentNode) document.body.removeChild(wrapper);
-        showToast('\u274C PDF export failed.');
-      }).finally(function() {
+      function finish(ok, errMsg) {
         btn.disabled = false;
         spinner.style.display = 'none';
-      });
+        if (ok) {
+          pdf.save(getExportPdfFileName());
+          showToast('\u2705 PDF downloaded!');
+        } else {
+          showToast('\u274C ' + (errMsg || 'PDF export failed.'));
+        }
+      }
+
+      function capturePage(idx) {
+        if (idx >= pages.length) { finish(true); return; }
+
+        var source = pages[idx];
+        var wrapper = document.createElement('div');
+        var captureTarget = source.cloneNode(true);
+        wrapper.id = 'pdf-capture-wrapper';
+        wrapper.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;height:1123px;z-index:-1;opacity:1;pointer-events:none;background:#fff;overflow:hidden;';
+        captureTarget.style.width = '794px';
+        captureTarget.style.height = '1123px';
+        captureTarget.style.margin = '0';
+        captureTarget.style.boxShadow = 'none';
+        captureTarget.style.borderRadius = '0';
+        wrapper.appendChild(captureTarget);
+        document.body.appendChild(wrapper);
+
+        html2canvas(captureTarget, {
+          scale: scale,
+          useCORS: true,
+          backgroundColor: '#ffffff',
+          logging: false,
+          removeContainer: true,
+          width: 794,
+          height: 1123,
+          windowWidth: Math.max(window.innerWidth || 0, 1200),
+          windowHeight: 1123
+        }).then(function(canvas) {
+          if (wrapper.parentNode) document.body.removeChild(wrapper);
+          var imgData = canvas.toDataURL('image/png');
+          if (idx > 0) pdf.addPage('a4', 'portrait');
+          pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'SLOW');
+          capturePage(idx + 1);
+        }).catch(function(err) {
+          console.error('PDF export error:', err);
+          if (wrapper.parentNode) document.body.removeChild(wrapper);
+          finish(false, 'PDF export failed.');
+        });
+      }
+
+      capturePage(0);
     } catch (err) {
       console.error('PDF export error:', err);
       showToast('\u274C PDF export failed.');
