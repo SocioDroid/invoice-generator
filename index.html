@@ -147,6 +147,8 @@
     .inv-table tbody td:last-child{text-align:right}
     .inv-row-total td{font-weight:700!important;background:var(--th-row-alt)!important;border-top:2px solid var(--th-border)!important}
     .inv-row-amount td{font-weight:700!important;background:var(--th-amount-bg)!important;color:var(--th-primary)!important}
+    .inv-row-proj-head td{font-weight:700!important;background:var(--th-light-bg)!important;color:var(--th-primary)!important;border-top:2px solid var(--th-border)!important}
+    .inv-row-proj td{font-weight:600!important;background:var(--th-white)!important}
 
     .inv-sidebar{flex:0 0 36%;max-width:36%;background:var(--th-sidebar);border-left:3px solid var(--th-primary);padding:16px 14px;display:flex;flex-direction:column;justify-content:flex-start;overflow:hidden}
     .sidebar-section{margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--th-divider)}
@@ -184,6 +186,7 @@
       .inv-table tbody tr:nth-child(even){background:var(--th-row-alt)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
       .inv-row-total td{background:var(--th-row-alt)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
       .inv-row-amount td{background:var(--th-amount-bg)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+      .inv-row-proj-head td{background:var(--th-light-bg)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
       .inv-sidebar{background:var(--th-sidebar)!important;border-left:3px solid var(--th-primary)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
       .inv-header{border-bottom:3px solid var(--th-primary)!important}
       .inv-cont-header{border-bottom:2px solid var(--th-primary)!important;background:var(--th-white)!important;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
@@ -234,6 +237,7 @@
     <div class="config-section-title">Invoice Details</div>
     <div class="config-grid">
       <div class="field-group"><label for="cfg-month">Month / Sheet</label><select id="cfg-month"><option value="">— upload a file first —</option></select></div>
+      <div class="field-group" id="proj-mode-group" style="display:none"><label for="cfg-proj-mode">Invoice Mode</label><select id="cfg-proj-mode"><option value="split">Single invoice — project split</option><option value="per-project">Per-project invoices (all projects)</option></select></div>
       <div class="field-group"><label for="cfg-inv-num">Invoice Number</label><input type="text" id="cfg-inv-num" placeholder="e.g. 202511" /></div>
       <div class="field-group"><label for="cfg-inv-date">Invoice Date</label><input type="date" id="cfg-inv-date" /></div>
       <div class="field-group"><label for="cfg-tenure">Tenure Period</label><input type="text" id="cfg-tenure" placeholder="e.g. 1st Nov, 2025 – 30th Nov, 2025" /></div>
@@ -320,7 +324,7 @@
   'use strict';
 
   // ═══════════════ STATE ═══════════════
-  var state = { workbook: null, sheetData: [], sheets: [] };
+  var state = { workbook: null, sheetData: [], sheets: [], hasProjects: false };
 
   // ═══════════════ CONSTANTS ═══════════════
   var LS_KEY_PERSONAL = 'invoiceGen_personalInfo';
@@ -412,7 +416,7 @@
       .replace(/\s+/g, '_');
   }
 
-  function getExportPdfFileName() {
+  function getExportPdfFileName(projectName) {
     var monthSheet = cfgVal('cfg-month');
     var invoiceDate = cfgVal('cfg-inv-date');
     var match = monthSheet.match(/^\s*([A-Za-z]+)\s+(\d{4})\s*$/);
@@ -435,7 +439,8 @@
 
     month = sanitizeFilePart(month || 'Month');
     year = sanitizeFilePart(year || 'Year');
-    return 'Invoice_' + month + '_' + year + '.pdf';
+    var proj = sanitizeFilePart(projectName || '');
+    return 'Invoice_' + month + '_' + year + (proj ? '_' + proj : '') + '.pdf';
   }
 
   // ═══════════════ XLSX PARSING ═══════════════
@@ -444,21 +449,43 @@
     if (!ws) return { tenure:'', rows:[], totalHours:0, rate:20 };
     var range = XLSX.utils.decode_range(ws['!ref']||'A1:C1');
     function cv(r,c) { var cell = ws[XLSX.utils.encode_cell({r:r,c:c})]; return cell ? (cell.v !== undefined ? cell.v : null) : null; }
-    var tenure = String(cv(0,1)||''), rows = [], rate = 20;
+    var tenure = String(cv(0,1)||''), rows = [], rate = 20, hasProjects = false;
     for (var r = 2; r <= range.e.r; r++) {
-      var c0=cv(r,0),c1=cv(r,1),c2=cv(r,2);
+      var c0=cv(r,0),c1=cv(r,1),c2=cv(r,2),c3=cv(r,3);
       if (c0==null) { var lb=String(c1||'').trim().toLowerCase(); if(lb==='rate per hour'&&c2!=null){var p=parseFloat(c2);if(!isNaN(p)&&p>0)rate=p;} continue; }
       if (c2==='--'||c2==null) continue;
       var hrs = parseFloat(c2); if (isNaN(hrs)) continue;
-      rows.push({ date:c0, desc:(c1!=null)?String(c1):'', hours:hrs });
+      var proj = (c3!=null) ? String(c3).trim() : '';
+      if (proj) hasProjects = true;
+      rows.push({ date:c0, desc:(c1!=null)?String(c1):'', hours:hrs, project:proj });
     }
-    return { tenure:tenure, rows:rows, totalHours:rows.reduce(function(s,r){return s+r.hours;},0), rate:rate };
+    // Legacy sheets (no Project column D) behave exactly as before: hasProjects stays false.
+    if (hasProjects) rows.forEach(function(r){ if(!r.project) r.project='Unassigned'; });
+    return { tenure:tenure, rows:rows, totalHours:rows.reduce(function(s,r){return s+r.hours;},0), rate:rate, hasProjects:hasProjects };
   }
 
   function suggestInvNum(name) {
     var ms={january:'01',february:'02',march:'03',april:'04',may:'05',june:'06',july:'07',august:'08',september:'09',october:'10',november:'11',december:'12'};
     var low=name.toLowerCase(),ym=name.match(/(\d{4})/),yr=ym?ym[1]:String(new Date().getFullYear());
     for(var m in ms){if(low.indexOf(m)!==-1)return yr+ms[m];} return '';
+  }
+
+  // ═══════════════ PROJECT MODE HELPERS ═══════════════
+  function getProjMode() { return state.hasProjects ? (cfgVal('cfg-proj-mode')||'split') : 'none'; }
+
+  function getProjectList() {
+    var seen={},list=[];
+    state.sheetData.forEach(function(r){ if(r.project && !seen[r.project]){seen[r.project]=1;list.push(r.project);} });
+    return list;
+  }
+
+  function updateProjectControls() {
+    $('proj-mode-group').style.display = state.hasProjects ? '' : 'none';
+  }
+
+  function updateInvNumSuggestion() {
+    var name=cfgVal('cfg-month'); if(!name) return;
+    var base=suggestInvNum(name); if(base) $('cfg-inv-num').value=base;
   }
 
   // ═══════════════ FILE LOAD ═══════════════
@@ -489,17 +516,30 @@
   }
   function onSheetChange(name) {
     if(!state.workbook)return;
-    var p=parseSheet(state.workbook,name); state.sheetData=p.rows;
+    var p=parseSheet(state.workbook,name); state.sheetData=p.rows; state.hasProjects=p.hasProjects;
     $('cfg-tenure').value=p.tenure; $('cfg-rate').value=p.rate;
-    var sug=suggestInvNum(name); if(sug)$('cfg-inv-num').value=sug;
+    updateProjectControls();
+    updateInvNumSuggestion();
     renderInvoice();
   }
 
   // ═══════════════ COMPUTE ═══════════════
-  function computeTotals() {
-    var hrs=state.sheetData.reduce(function(s,r){return s+r.hours;},0);
+  function totalsForRows(rows) {
+    var hrs=rows.reduce(function(s,r){return s+r.hours;},0);
     var rate=cfgNum('cfg-rate',20),fx=cfgNum('cfg-fx',86);
     return {hours:hrs,rate:rate,fx:fx,usd:hrs*rate,inr:hrs*rate*fx};
+  }
+  function computeTotals() { return totalsForRows(state.sheetData); }
+
+  // Per-project subtotals (split-mode summary block)
+  function computeProjectTotals() {
+    var rate=cfgNum('cfg-rate',20),fx=cfgNum('cfg-fx',86),map={},order=[];
+    state.sheetData.forEach(function(r){
+      var p=r.project||'Unassigned';
+      if(!(p in map)){map[p]=0;order.push(p);}
+      map[p]+=r.hours;
+    });
+    return order.map(function(p){return {project:p,hours:map[p],usd:map[p]*rate,inr:map[p]*rate*fx};});
   }
 
   // ═══════════════ AUTO-FIT SIZING ═══════════════
@@ -517,11 +557,13 @@
   }
 
   // ═══════════════ RENDER INVOICE ═══════════════
-  function buildHeaderEl(name, email, phone, address, tenure, sz) {
+  function buildHeaderEl(name, email, phone, address, tenure, sz, projLabel) {
     var nameEl=mk('div',{className:'inv-name',textContent:name}); nameEl.style.fontSize=sz.nameFs+'px';
+    var right=[mk('div',{className:'inv-title-label',textContent:'Invoice'}),mk('div',{className:'inv-tenure',textContent:tenure})];
+    if (projLabel) { var pe=mk('div',{className:'inv-tenure',textContent:'Project: '+projLabel}); pe.style.fontWeight='700'; right.push(pe); }
     return mk('div',{className:'inv-header'},[
       mk('div',{className:'inv-header-left'},[nameEl,mk('div',{className:'inv-contact',textContent:email+' \u2022 '+phone}),mk('div',{className:'inv-address',textContent:address})]),
-      mk('div',{className:'inv-header-right'},[mk('div',{className:'inv-title-label',textContent:'Invoice'}),mk('div',{className:'inv-tenure',textContent:tenure})])
+      mk('div',{className:'inv-header-right'},right)
     ]);
   }
 
@@ -612,16 +654,38 @@
     return ra;
   }
 
+  // Project-wise summary rows (single-invoice split mode only) — amounts in ₹
+  function buildProjectSummaryRowEls(padCSS) {
+    var out=[];
+    var head=mk('tr',{className:'inv-row-proj-head'});
+    var h1=mk('td');h1.style.padding=padCSS;
+    var h2=mk('td',{textContent:'Project-wise Summary'});h2.style.padding=padCSS;
+    var h3=mk('td',{textContent:'Hrs / \u20B9'});h3.style.padding=padCSS;h3.style.textAlign='right';
+    head.appendChild(h1);head.appendChild(h2);head.appendChild(h3);
+    out.push(head);
+    computeProjectTotals().forEach(function(pt){
+      var tr=mk('tr',{className:'inv-row-proj'});
+      var a=mk('td');a.style.padding=padCSS;
+      var b=mk('td',{textContent:pt.project});b.style.padding=padCSS;
+      var c=mk('td',{textContent:pt.hours.toFixed(2)+' hrs \u2022 '+formatINR(pt.inr)});c.style.padding=padCSS;c.style.textAlign='right';c.style.whiteSpace='nowrap';
+      tr.appendChild(a);tr.appendChild(b);tr.appendChild(c);
+      out.push(tr);
+    });
+    return out;
+  }
+
   function renderInvoice() {
     var t = computeTotals();
+    var mode = getProjMode();
     $('cfg-hours').value=t.hours.toFixed(2);
     $('cfg-usd').value='$'+t.usd.toFixed(2);
     $('cfg-inr').value=formatINR(t.inr);
-    $('computed-summary').textContent=t.hours.toFixed(2)+' hrs \u00D7 $'+t.rate+' \u00D7 '+t.fx+' = '+formatINR(t.inr);
+    var projCount = (mode==='per-project') ? getProjectList().length : 0;
+    $('computed-summary').textContent=t.hours.toFixed(2)+' hrs \u00D7 $'+t.rate+' \u00D7 '+t.fx+' = '+formatINR(t.inr)+(projCount?(' \u2022 '+projCount+' project invoice'+(projCount>1?'s':'')):'');
 
     var name=cfgVal('cfg-name')||'Your Name',email=cfgVal('cfg-email')||'email@example.com',phone=cfgVal('cfg-phone')||'\u2014';
     var addr1=cfgVal('cfg-addr1'),addr2=cfgVal('cfg-addr2'),tenure=cfgVal('cfg-tenure')||'\u2014';
-    var invDate=cfgVal('cfg-inv-date'),billedTo=cfgVal('cfg-billed-to')||'\u2014',invNum=cfgVal('cfg-inv-num')||'\u2014';
+    var invDate=cfgVal('cfg-inv-date'),billedTo=cfgVal('cfg-billed-to')||'\u2014',invNumBase=cfgVal('cfg-inv-num')||'\u2014';
     var bank=cfgVal('cfg-bank')||'\u2014',branch=cfgVal('cfg-branch')||'\u2014',account=cfgVal('cfg-account')||'\u2014';
     var ifsc=cfgVal('cfg-ifsc')||'\u2014',micr=cfgVal('cfg-micr')||'\u2014';
     var address=[addr1,addr2].filter(Boolean).join(', ')||'\u2014';
@@ -636,10 +700,11 @@
     // Empty state — single page (full layout)
     if (!state.sheetData.length) {
       var page0 = buildPageEl(
-        buildHeaderEl(name, email, phone, address, tenure, sz),
-        buildSidebarEl(t, invDate, billedTo, invNum, bank, branch, account, ifsc, micr),
+        buildHeaderEl(name, email, phone, address, tenure, sz, ''),
+        buildSidebarEl(t, invDate, billedTo, invNumBase, bank, branch, account, ifsc, micr),
         sz, padCSS
       );
+      page0.setAttribute('data-pdf-name', getExportPdfFileName(''));
       pv.appendChild(page0);
       var tb0 = page0.querySelector('tbody');
       var ed = mk('td',{textContent:'Upload a timesheet to populate'});
@@ -648,23 +713,49 @@
       return;
     }
 
+    // One invoice normally; one invoice per project in per-project mode.
+    var invoices;
+    if (mode==='per-project') {
+      invoices = getProjectList().map(function(proj){
+        return {
+          rows: state.sheetData.filter(function(r){return r.project===proj;}),
+          project: proj,
+          invNum: (invNumBase==='\u2014') ? invNumBase : invNumBase+'-'+proj,
+          pdfName: getExportPdfFileName(proj)
+        };
+      });
+    } else {
+      invoices = [{ rows: state.sheetData, project:'', invNum: invNumBase, pdfName: getExportPdfFileName('') }];
+    }
+
+    invoices.forEach(function(inv){
+      renderSingleInvoice(pv, inv, totalsForRows(inv.rows), mode,
+        {name:name,email:email,phone:phone,address:address,tenure:tenure,invDate:invDate,billedTo:billedTo,bank:bank,branch:branch,account:account,ifsc:ifsc,micr:micr},
+        sz, padCSS);
+    });
+  }
+
+  // Renders one complete (possibly multi-page) invoice and appends its pages to pv.
+  function renderSingleInvoice(pv, inv, t, mode, c, sz, padCSS) {
+    var invPages = [];
     // Page 1 — full layout (header + sidebar + narrower table).
     // Continuation pages — slim header + full-width table only (no repeated sidebar/payment info).
     var firstPage = buildPageEl(
-      buildHeaderEl(name, email, phone, address, tenure, sz),
-      buildSidebarEl(t, invDate, billedTo, invNum, bank, branch, account, ifsc, micr),
+      buildHeaderEl(c.name, c.email, c.phone, c.address, c.tenure, sz, inv.project),
+      buildSidebarEl(t, c.invDate, c.billedTo, inv.invNum, c.bank, c.branch, c.account, c.ifsc, c.micr),
       sz, padCSS
     );
     pv.appendChild(firstPage);
+    invPages.push(firstPage);
 
-    var remaining = state.sheetData.slice();
+    var remaining = inv.rows.slice();
     var isFirst = true;
     var safety = 0;
 
     while (remaining.length > 0 && safety < 200) {
       safety++;
-      var page = isFirst ? firstPage : buildContPageEl(name, invNum, tenure, sz, padCSS);
-      if (!isFirst) pv.appendChild(page);
+      var page = isFirst ? firstPage : buildContPageEl(c.name, inv.invNum, c.tenure, sz, padCSS);
+      if (!isFirst) { pv.appendChild(page); invPages.push(page); }
 
       var tw  = page.querySelector(isFirst ? '.inv-table-wrap' : '.inv-table-wrap-full');
       var tbl = tw.querySelector('.inv-table');
@@ -699,16 +790,21 @@
 
       var lastBatch = (added === remaining.length);
       if (lastBatch) {
-        var rtEl = buildTotalRowEl(t, padCSS);
-        var raEl = buildAmountRowEl(t, padCSS);
-        tb.appendChild(rtEl); tb.appendChild(raEl);
-        if (raEl.getBoundingClientRect().bottom > bottomLimit) {
-          tb.removeChild(raEl); tb.removeChild(rtEl);
-          var contPage = buildContPageEl(name, invNum, tenure, sz, padCSS);
-          pv.appendChild(contPage);
+        // Summary block: optional project-wise rows (split mode) + total + amount rows.
+        var buildSummaryEls = function() {
+          var els = (mode==='split') ? buildProjectSummaryRowEls(padCSS) : [];
+          els.push(buildTotalRowEl(t, padCSS));
+          els.push(buildAmountRowEl(t, padCSS));
+          return els;
+        };
+        var sumEls = buildSummaryEls();
+        sumEls.forEach(function(el){tb.appendChild(el);});
+        if (sumEls[sumEls.length-1].getBoundingClientRect().bottom > bottomLimit) {
+          sumEls.forEach(function(el){tb.removeChild(el);});
+          var contPage = buildContPageEl(c.name, inv.invNum, c.tenure, sz, padCSS);
+          pv.appendChild(contPage); invPages.push(contPage);
           var contTb = contPage.querySelector('tbody');
-          contTb.appendChild(buildTotalRowEl(t, padCSS));
-          contTb.appendChild(buildAmountRowEl(t, padCSS));
+          buildSummaryEls().forEach(function(el){contTb.appendChild(el);});
         }
         remaining = [];
       } else {
@@ -717,16 +813,16 @@
       isFirst = false;
     }
 
-    // Add "Page X of Y" indicator when there are multiple pages
-    var pages = pv.querySelectorAll('.invoice-page');
-    if (pages.length > 1) {
-      for (var p = 0; p < pages.length; p++) {
-        var footer = pages[p].querySelector('.inv-page-footer');
+    // Tag pages with this invoice's PDF filename; add "Page X of Y" within the invoice
+    for (var p = 0; p < invPages.length; p++) {
+      invPages[p].setAttribute('data-pdf-name', inv.pdfName);
+      if (invPages.length > 1) {
+        var footer = invPages[p].querySelector('.inv-page-footer');
         if (!footer) {
           footer = mk('div',{className:'inv-page-footer'});
-          pages[p].appendChild(footer);
+          invPages[p].appendChild(footer);
         }
-        footer.textContent = 'Page ' + (p+1) + ' of ' + pages.length;
+        footer.textContent = 'Page ' + (p+1) + ' of ' + invPages.length;
       }
     }
   }
@@ -1394,61 +1490,80 @@
       var pages = document.querySelectorAll('#invoice-preview .invoice-page');
       if (!pages.length) throw new Error('Invoice preview not found');
 
+      // Group consecutive pages by invoice (data-pdf-name) — one PDF per invoice.
+      var groups = [];
+      var cur = null;
+      Array.prototype.forEach.call(pages, function(pg){
+        var nm = pg.getAttribute('data-pdf-name') || getExportPdfFileName('');
+        if (!cur || cur.name !== nm) { cur = { name: nm, pages: [] }; groups.push(cur); }
+        cur.pages.push(pg);
+      });
+
       var jsPDF = window.jspdf.jsPDF;
-      var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: false });
       var scale = Math.max(4, Math.ceil(window.devicePixelRatio || 1));
 
       function finish(ok, errMsg) {
         btn.disabled = false;
         spinner.style.display = 'none';
         if (ok) {
-          pdf.save(getExportPdfFileName());
-          showToast('\u2705 PDF downloaded!');
+          showToast('\u2705 ' + groups.length + ' PDF' + (groups.length > 1 ? 's' : '') + ' downloaded!');
         } else {
           showToast('\u274C ' + (errMsg || 'PDF export failed.'));
         }
       }
 
-      function capturePage(idx) {
-        if (idx >= pages.length) { finish(true); return; }
+      function captureGroup(gIdx) {
+        if (gIdx >= groups.length) { finish(true); return; }
+        var group = groups[gIdx];
+        var pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: false });
 
-        var source = pages[idx];
-        var wrapper = document.createElement('div');
-        var captureTarget = source.cloneNode(true);
-        wrapper.id = 'pdf-capture-wrapper';
-        wrapper.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;height:1123px;z-index:-1;opacity:1;pointer-events:none;background:#fff;overflow:hidden;';
-        captureTarget.style.width = '794px';
-        captureTarget.style.height = '1123px';
-        captureTarget.style.margin = '0';
-        captureTarget.style.boxShadow = 'none';
-        captureTarget.style.borderRadius = '0';
-        wrapper.appendChild(captureTarget);
-        document.body.appendChild(wrapper);
+        function capturePage(idx) {
+          if (idx >= group.pages.length) {
+            pdf.save(group.name);
+            captureGroup(gIdx + 1);
+            return;
+          }
 
-        html2canvas(captureTarget, {
-          scale: scale,
-          useCORS: true,
-          backgroundColor: '#ffffff',
-          logging: false,
-          removeContainer: true,
-          width: 794,
-          height: 1123,
-          windowWidth: Math.max(window.innerWidth || 0, 1200),
-          windowHeight: 1123
-        }).then(function(canvas) {
-          if (wrapper.parentNode) document.body.removeChild(wrapper);
-          var imgData = canvas.toDataURL('image/png');
-          if (idx > 0) pdf.addPage('a4', 'portrait');
-          pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'SLOW');
-          capturePage(idx + 1);
-        }).catch(function(err) {
-          console.error('PDF export error:', err);
-          if (wrapper.parentNode) document.body.removeChild(wrapper);
-          finish(false, 'PDF export failed.');
-        });
+          var source = group.pages[idx];
+          var wrapper = document.createElement('div');
+          var captureTarget = source.cloneNode(true);
+          wrapper.id = 'pdf-capture-wrapper';
+          wrapper.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;height:1123px;z-index:-1;opacity:1;pointer-events:none;background:#fff;overflow:hidden;';
+          captureTarget.style.width = '794px';
+          captureTarget.style.height = '1123px';
+          captureTarget.style.margin = '0';
+          captureTarget.style.boxShadow = 'none';
+          captureTarget.style.borderRadius = '0';
+          wrapper.appendChild(captureTarget);
+          document.body.appendChild(wrapper);
+
+          html2canvas(captureTarget, {
+            scale: scale,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+            removeContainer: true,
+            width: 794,
+            height: 1123,
+            windowWidth: Math.max(window.innerWidth || 0, 1200),
+            windowHeight: 1123
+          }).then(function(canvas) {
+            if (wrapper.parentNode) document.body.removeChild(wrapper);
+            var imgData = canvas.toDataURL('image/png');
+            if (idx > 0) pdf.addPage('a4', 'portrait');
+            pdf.addImage(imgData, 'PNG', 0, 0, 210, 297, undefined, 'SLOW');
+            capturePage(idx + 1);
+          }).catch(function(err) {
+            console.error('PDF export error:', err);
+            if (wrapper.parentNode) document.body.removeChild(wrapper);
+            finish(false, 'PDF export failed.');
+          });
+        }
+
+        capturePage(0);
       }
 
-      capturePage(0);
+      captureGroup(0);
     } catch (err) {
       console.error('PDF export error:', err);
       showToast('\u274C PDF export failed.');
@@ -1501,6 +1616,7 @@
       reader.readAsArrayBuffer(f);
     });
     $('cfg-month').addEventListener('change',function(e){onSheetChange(e.target.value);});
+    $('cfg-proj-mode').addEventListener('change',function(){updateProjectControls();updateInvNumSuggestion();renderInvoice();});
     ALL_CONFIG_INPUTS.forEach(function(id){var el=$(id);if(el)el.addEventListener('input',renderInvoice);});
     $('save-info-btn').addEventListener('click',savePersonalInfo);
     $('export-pdf-btn').addEventListener('click',exportPDF);
