@@ -36,13 +36,13 @@ A minimal, single-file invoice generator that runs entirely in the browser. Uplo
 
 Create an `.xlsx` file where each sheet represents one month. Expected sheet format:
 
-| Row | Column A | Column B | Column C |
-| --- | -------- | -------- | -------- |
-| 1 | *(any)* | **Tenure period** (for example `1st Nov, 2025 - 30th Nov, 2025`) | *(any)* |
-| 2 | *(any)* | *(any)* | *(any)* |
-| 3 | **Date** | **Task Description** | **Time Required [Hours]** |
-| 4+ | Date value | Task description | Hours (number) |
-| ... | *(empty A)* | `Rate Per Hour` | Rate value (for example `25`) |
+| Row | Column A | Column B | Column C | Column D *(optional)* |
+| --- | -------- | -------- | -------- | --------------------- |
+| 1 | *(any)* | **Tenure period** (for example `1st Nov, 2025 - 30th Nov, 2025`) | *(any)* | *(any)* |
+| 2 | *(any)* | *(any)* | *(any)* | *(any)* |
+| 3 | **Date** | **Task Description** | **Time Required [Hours]** | **Project** |
+| 4+ | Date value | Task description | Hours (number) | Project name (for example `Hawk-Integration`) |
+| ... | *(empty A)* | `Rate Per Hour` | Rate value (for example `25`) | |
 
 Rules:
 
@@ -52,6 +52,7 @@ Rules:
 - A row is skipped if Column A is empty, Column C is `--`, or Column C is not numeric.
 - If Column A is empty and Column B is `Rate Per Hour`, Column C is used as the hourly rate.
 - Default rate is `20 USD/hr` if none is found in the sheet.
+- **Column D (Project) is optional.** Sheets without it behave exactly as before. When any data row has a project value, project features unlock (see *Project-Wise Invoicing* below); rows left blank are grouped as `Unassigned`.
 
 Sheet naming convention:
 
@@ -69,8 +70,17 @@ Sheet naming convention:
 
 - The live preview updates instantly on every change.
 - Click **Export to PDF** to download a high-quality A4 PDF.
-- PDF downloads use the format `Invoice_<Month>_<Year>.pdf`.
+- PDF downloads use the format `Invoice_<Month>_<Year>.pdf` (with `_<Project>` appended in per-project mode).
 - Click **Copy Invoice Number** to copy the invoice number to the clipboard.
+
+### Project-Wise Invoicing (Optional)
+
+When the selected sheet has a **Project** column (Column D), an **Invoice Mode** selector appears:
+
+- **Single invoice — project split** *(default)*: one invoice with all rows, plus a *Project-wise Summary* block (hours and ₹ amount per project) above the totals.
+- **Per-project invoices (all projects)**: the preview shows one complete invoice per project, stacked. Each has its own line items, totals, and invoice number auto-suggested as `YYYYMM-<Project>` (for example `202604-Hawk-Integration`), with the project name in the header. **Export to PDF** downloads one PDF per project in a single click (`Invoice_<Month>_<Year>_<Project>.pdf`).
+
+All invoice amounts are shown in ₹ (INR). Sheets without a Project column are unaffected and render exactly as before.
 
 ### 4. Google Sheets (Optional)
 
